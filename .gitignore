@@ -1,5 +1,5 @@
-# Binaries
-mison
+# Binaries (root-anchored so cmd/mison/ is not ignored)
+/mison
 dist/
 
 # Go

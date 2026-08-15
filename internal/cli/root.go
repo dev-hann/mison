@@ -45,7 +45,7 @@ func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Register this machine with a mison environment",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("init: not implemented yet")
 		},
 	}
@@ -56,7 +56,7 @@ func newInstallCmd() *cobra.Command {
 		Use:   "install <tool>...",
 		Short: "Add tools to the environment and install them",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("install: not implemented yet")
 		},
 	}
@@ -67,7 +67,7 @@ func newUninstallCmd() *cobra.Command {
 		Use:   "uninstall <tool>...",
 		Short: "Remove tools from the environment",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("uninstall: not implemented yet")
 		},
 	}
@@ -77,7 +77,7 @@ func newSyncCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sync",
 		Short: "Pull the latest environment and apply it",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("sync: not implemented yet")
 		},
 	}
@@ -87,7 +87,7 @@ func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Compare the declaration with installed tools",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return fmt.Errorf("status: not implemented yet")
 		},
 	}
