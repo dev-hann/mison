@@ -41,6 +41,8 @@ func foundLookPath(string) (string, error) { return "/usr/bin/mise", nil }
 
 func newTestApp(t *testing.T) (*App, *fakeMise, *bytes.Buffer) {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 	fm := &fakeMise{}
 	out := &bytes.Buffer{}
 	app := &App{

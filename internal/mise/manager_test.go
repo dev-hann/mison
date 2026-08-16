@@ -87,6 +87,7 @@ func TestInstallRunsOfficialScript(t *testing.T) {
 }
 
 func TestExecPrependsShimPath(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
 	fx := newFakeExec()
 	fx.script("mise install", "", nil)
 	m := NewManager(fx, "/home/u")
@@ -116,6 +117,7 @@ func TestExecErrorPropagates(t *testing.T) {
 }
 
 func TestInstalledToolsParsesLS(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	fx := newFakeExec()
 	fx.script("mise ls --current --json", `{
   "node": [
@@ -139,6 +141,7 @@ func TestInstalledToolsParsesLS(t *testing.T) {
 }
 
 func TestInstalledToolsFiltersForeignSources(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	// tools declared by other config files (project mise.toml, foreign
 	// global config) must not leak into mison's view
 	fx := newFakeExec()
@@ -164,6 +167,7 @@ func TestInstalledToolsFiltersForeignSources(t *testing.T) {
 }
 
 func TestInstalledToolsMatchesDeclarationPathDirectly(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	// source may point at the real declaration file instead of the symlink
 	fx := newFakeExec()
 	fx.script("mise ls --current --json", `{
@@ -184,6 +188,7 @@ func TestInstalledToolsMatchesDeclarationPathDirectly(t *testing.T) {
 }
 
 func TestInstalledToolsPicksActiveEntry(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	// multiple installed versions: the active one counts
 	fx := newFakeExec()
 	fx.script("mise ls --current --json", `{

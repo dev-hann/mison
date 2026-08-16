@@ -7,6 +7,7 @@ import (
 )
 
 func TestLayoutUsesMisonDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	l := New("/home/u")
 	if l.EnvDir != "/home/u/.mison/env" {
 		t.Errorf("EnvDir = %q", l.EnvDir)
@@ -27,6 +28,7 @@ func TestLayoutRespectsXDGConfig(t *testing.T) {
 }
 
 func TestEnsureCreatesEnvDirAndFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	l := New(t.TempDir())
 
 	created, err := l.Ensure()
@@ -48,6 +50,7 @@ func TestEnsureCreatesEnvDirAndFile(t *testing.T) {
 }
 
 func TestEnsureIdempotent(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	l := New(t.TempDir())
 	if _, err := l.Ensure(); err != nil {
 		t.Fatalf("first Ensure(): %v", err)
@@ -70,6 +73,7 @@ func TestEnsureIdempotent(t *testing.T) {
 }
 
 func TestEnsureSymlinksGlobalConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	l := New(home)
 
@@ -91,6 +95,7 @@ func TestEnsureSymlinksGlobalConfig(t *testing.T) {
 }
 
 func TestEnsureReplacesForeignFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	l := New(home)
 

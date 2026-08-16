@@ -48,6 +48,7 @@ func TestMiseBinaryPathUsesHome(t *testing.T) {
 }
 
 func TestShimPathUsesHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
 	got := ShimPath("/home/u")
 	want := "/home/u/.local/share/mise/shims"
 	if got != want {
