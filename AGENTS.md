@@ -105,8 +105,9 @@ process stdio through (child-process UI, not ours) — via Runner.RunTTY.
 | install/uninstall | declare + apply + auto commit&push (fetch+rebase on reject) |
 | sync | pull → apply (os-filtered) → push pending → orphan prompt |
 | OS scoping | default all machines; `--mac`/`--linux[/x64|/arm64]` → mise `os` field |
-| Repo | private env repo, owned by mison (auto-commit manual edits) |
+| Repo | private env repo `mison-env`, name persisted in ~/.mison/config.toml; owned by mison (auto-commit manual edits) |
 | Layers | cli → usecase → repo → service; process boundary in service |
+| Schema | `[_.mison] schema = 1` guard — refuse newer schemas before any reset/push |
 
 Full rationale: `docs/DESIGN.md`.
 

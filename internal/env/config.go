@@ -25,6 +25,9 @@ func Parse(data []byte) (*Config, error) {
 	if _, err := c.tools(); err != nil {
 		return nil, err
 	}
+	if err := checkSchema(raw); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -80,16 +83,40 @@ func toTool(name string, v any) (Tool, error) {
 	}
 }
 
-// SetTool adds or updates a tool in the [tools] table.
+// SetTool adds or updates a tool in the [tools] table, preserving any
+// options (postinstall, depends, ...) already present on the entry.
+// A bare-string entry with no options stays a bare string.
 func (c *Config) SetTool(t Tool) {
 	table := c.toolsTable()
-	if len(t.OS) == 0 {
-		table[t.Name] = t.Version
+	existing, ok := table[t.Name]
+	if !ok {
+		if len(t.OS) == 0 {
+			table[t.Name] = t.Version
+			return
+		}
+		table[t.Name] = map[string]any{
+			"version": t.Version,
+			"os":      toAny(t.OS),
+		}
 		return
 	}
-	table[t.Name] = map[string]any{
-		"version": t.Version,
-		"os":      toAny(t.OS),
+
+	// merge into the existing entry, whatever its shape
+	entry, ok := existing.(map[string]any)
+	if !ok {
+		entry = map[string]any{"version": existing.(string)}
+		table[t.Name] = entry
+	}
+	entry["version"] = t.Version
+	if len(t.OS) > 0 {
+		entry["os"] = toAny(t.OS)
+	} else {
+		delete(entry, "os")
+	}
+
+	// collapse back to a bare string when no options remain
+	if len(entry) == 1 {
+		table[t.Name] = t.Version
 	}
 }
 

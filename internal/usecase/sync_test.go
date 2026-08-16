@@ -518,3 +518,67 @@ func TestOwnedToolsMatchesDeclarationPathDirectly(t *testing.T) {
 		t.Fatalf("OwnedTools() = %+v, want node via direct path", got)
 	}
 }
+
+func TestSmartPullRejectsFutureSchemaWithoutTouchingWorktree(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	// A writes a schema-2 declaration (as a future mison would)
+	writeToml(t, a, "[_.mison]\nschema = 2\n\n[tools]\nnode = \"22\"\n")
+	git(t, a.Dir(), "add", "-A")
+	git(t, a.Dir(), "commit", "-m", "future schema")
+	git(t, a.Dir(), "push", "origin", "HEAD:main")
+
+	// B has local content that must remain untouched
+	writeToml(t, b, "[tools]\njq = \"latest\"\n")
+
+	_, err := b.SmartPull(keepLocal)
+	if err == nil || !strings.Contains(err.Error(), "upgrade mison") {
+		t.Fatalf("SmartPull() error = %v, want schema guard error", err)
+	}
+
+	// the worktree must be unchanged — no reset, no data loss
+	localData, _ := os.ReadFile(filepath.Join(b.Dir(), "mise.toml"))
+	if !strings.Contains(string(localData), "jq") {
+		t.Fatalf("local declaration must be untouched by guard:\n%s", localData)
+	}
+	if strings.Contains(string(localData), `node = "22"`) {
+		t.Fatalf("future-schema remote must not be checked out:\n%s", localData)
+	}
+}
+
+func TestSmartPushRefusesToPushOntoFutureSchemaRemote(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	writeToml(t, a, "[_.mison]\nschema = 2\n\n[tools]\nnode = \"22\"\n")
+	git(t, a.Dir(), "add", "-A")
+	git(t, a.Dir(), "commit", "-m", "future schema")
+	git(t, a.Dir(), "push", "origin", "HEAD:main")
+
+	writeToml(t, b, "[tools]\nripgrep = \"latest\"\n")
+	if _, err := b.SmartPush("install: ripgrep", keepLocal); err == nil {
+		t.Fatal("SmartPush() must refuse when the remote uses a future schema")
+	} else if !strings.Contains(err.Error(), "upgrade mison") {
+		t.Fatalf("error = %v, want schema guard error", err)
+	}
+
+	// the remote keeps A's content only
+	got := readRemoteToml(t, remote)
+	if strings.Contains(got, "ripgrep") {
+		t.Fatalf("push must not have landed:\n%s", got)
+	}
+}
+
+func TestSaveConfigStampsSchemaInFlows(t *testing.T) {
+	f, _, _ := newTestFlows(t)
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatal(err)
+	}
+	toml := readToml(t, f)
+	if !strings.Contains(toml, "[_.mison]") || !strings.Contains(toml, "schema = 1") {
+		t.Fatalf("flows must stamp the schema on save:\n%s", toml)
+	}
+}

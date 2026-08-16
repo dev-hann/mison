@@ -744,3 +744,45 @@ func TestConflictResolutionRoutesThroughPrompter(t *testing.T) {
 		t.Errorf("pushes = %v, want push after resolution", repo.pushes)
 	}
 }
+
+func TestRunInitPersistsRepoNameLocally(t *testing.T) {
+	repo := &fakeRepo{}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: false}
+
+	if err := f.RunInit("my-env"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(f.Home, ".mison", "config.toml"))
+	if err != nil {
+		t.Fatalf("local config missing: %v", err)
+	}
+	if !strings.Contains(string(data), `repo = "my-env"`) {
+		t.Fatalf("repo name not persisted:\n%s", data)
+	}
+
+	// a second machine (fresh local state) must prefer the persisted
+	// name over any default drift: simulate by resetting the fake repo
+	repo2 := &fakeRepo{}
+	f.Git = func(string) EnvRepoIface { return repo2 }
+	f.Gh = &fakeGh{installed: true, authed: true, exists: true, url: "https://github.com/me/my-env.git"}
+	if err := f.RunInit("ignored-default"); err != nil {
+		t.Fatalf("second RunInit() error = %v", err)
+	}
+	if len(repo2.connected) != 1 || repo2.connected[0] != "https://github.com/me/my-env.git" {
+		t.Errorf("persisted repo not used: %v", repo2.connected)
+	}
+}
+
+func TestRunInitDoesNotWriteReadme(t *testing.T) {
+	repo := &fakeRepo{}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.Home, ".mison", "env", "README.md")); !os.IsNotExist(err) {
+		t.Errorf("README.md must not be created: %v", err)
+	}
+}

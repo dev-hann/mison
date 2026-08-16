@@ -26,7 +26,7 @@ package manager:
   current OS/architecture, including tools restricted via mise's native
   `os` field.
 - **GitHub** is the source of truth. Your declarations live in a private
-  repository (`mison-environment`) holding a single `mise.toml`.
+  repository (`mison-env`) holding a single `mise.toml` — nothing else.
 - **[gh](https://cli.github.com)** handles auth. mison installs gh *through
   mise* (so gh is itself part of your synced environment) and uses device-flow
   login plus git credential setup. No tokens stored by mison.

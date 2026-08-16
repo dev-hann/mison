@@ -107,6 +107,9 @@ Principle: hide complexity (git), never hide information (changes).
 | 11 | orphan prompt + --prune | safe default, scriptable override |
 | 12 | explicit mise update only | sync stays fast and predictable |
 | 13 | auto-commit manual edits | mison owns the repo; user edits are welcome |
+| 14 | schema guard `[_.mison] schema` | forward-incompatibility shield (npm lockfileVersion pattern); older mison refuses newer schemas before any reset/push |
+| 15 | repo name `mison-env`, persisted in ~/.mison/config.toml | short, self-describing; local persistence prevents default-drift split-brain across machines |
+| 16 | no README in the env repo | mise.toml is the single source of truth; the repo is mison-owned
 
 ## 6. Sync case matrix
 

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dev-hann/mison/internal/detector"
@@ -26,7 +27,41 @@ type GhClient interface {
 }
 
 // DefaultRepoName is the environment repository mison creates.
-const DefaultRepoName = "mison-environment"
+const DefaultRepoName = "mison-env"
+
+// repoConfigPath is the local-only file remembering which env repo
+// this machine is bound to (guards against default-name drift across
+// mison versions). Never committed to the env repo.
+func (f *Flows) repoConfigPath() string {
+	return filepath.Join(f.Home, ".mison", "config.toml")
+}
+
+// resolveRepoName picks the repo name: explicit flag > persisted >
+// default. A successful connection persists the choice.
+func (f *Flows) resolveRepoName(flagged string) string {
+	if flagged != "" && flagged != DefaultRepoName {
+		return flagged
+	}
+	if data, err := os.ReadFile(f.repoConfigPath()); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "repo = "); ok {
+				return strings.Trim(v, `"`)
+			}
+		}
+	}
+	return flagged
+}
+
+func (f *Flows) persistRepoName(name string) {
+	if name == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(f.repoConfigPath()), 0o755); err != nil {
+		return
+	}
+	content := "# managed by mison\nrepo = " + strconv.Quote(name) + "\n"
+	_ = os.WriteFile(f.repoConfigPath(), []byte(content), 0o644)
+}
 
 // Flows carries the dependencies for mison's command flows. All fields
 // are injected; tests provide fakes. Flows reach the user exclusively
@@ -96,6 +131,9 @@ func (f *Flows) loadConfig() (*env.Config, error) {
 }
 
 func (f *Flows) saveConfig(cfg *env.Config) error {
+	if err := cfg.StampSchema(); err != nil {
+		return err
+	}
 	data, err := cfg.Bytes()
 	if err != nil {
 		return err
@@ -478,9 +516,11 @@ func (f *Flows) RunInit(repoName string) error {
 		return err
 	}
 
+	repoName = f.resolveRepoName(repoName)
 	if err := f.connectRepo(repoName); err != nil {
 		return err
 	}
+	f.persistRepoName(repoName)
 
 	r.Step("Installing declared tools")
 	if err := f.Mise.Exec("install"); err != nil {
@@ -533,7 +573,6 @@ func (f *Flows) ensureGh() error {
 // git, and push the initial declaration.
 func (f *Flows) connectRepo(repoName string) error {
 	r := f.UI
-	envDir := f.layout().EnvDir
 	repo := f.envRepo()
 
 	if repo.IsRepo() && repo.RemoteURL() != "" {
@@ -553,9 +592,6 @@ func (f *Flows) connectRepo(repoName string) error {
 		}
 		if repo.RemoteIsEmpty() {
 			// remote created but never seeded: push the initial state
-			if err := writeReadme(envDir, repoName); err != nil {
-				return err
-			}
 			_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
 		}
 		return err
@@ -567,9 +603,6 @@ func (f *Flows) connectRepo(repoName string) error {
 		return err
 	}
 
-	if err := writeReadme(envDir, repoName); err != nil {
-		return err
-	}
 	if err := repo.Init(); err != nil {
 		return err
 	}
@@ -578,10 +611,4 @@ func (f *Flows) connectRepo(repoName string) error {
 	}
 	_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
 	return err
-}
-
-func writeReadme(envDir, repoName string) error {
-	name := filepath.Base(repoName)
-	content := fmt.Sprintf("# %s\n\nDevelopment environment managed by [mison](https://github.com/dev-hann/mison).\n\nEdit `mise.toml` (or use the mison CLI) and sync.\n", name)
-	return os.WriteFile(filepath.Join(envDir, "README.md"), []byte(content), 0o644)
 }
