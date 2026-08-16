@@ -35,7 +35,14 @@ func (g *Git) run(args ...string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	err := cmd.Run()
-	return out.String(), err
+	if err != nil {
+		detail := strings.TrimSpace(out.String())
+		if detail == "" {
+			return out.String(), fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		}
+		return out.String(), fmt.Errorf("git %s: %w — %s", strings.Join(args, " "), err, detail)
+	}
+	return out.String(), nil
 }
 
 // IsRepo reports whether dir is a git repository.
@@ -47,7 +54,7 @@ func (g *Git) IsRepo() bool {
 // Init turns dir into a fresh git repo with main as initial branch.
 func (g *Git) Init() error {
 	if _, err := g.run("init", "-b", "main"); err != nil {
-		return fmt.Errorf("git init: %w", err)
+		return err
 	}
 	return nil
 }
@@ -79,7 +86,7 @@ func (g *Git) SyncStatus() (SyncInfo, error) {
 	}
 	head, err := g.rev("HEAD")
 	if err != nil {
-		return info, fmt.Errorf("git rev-parse HEAD: %w", err)
+		return info, err
 	}
 	remote, err := g.rev("origin/main")
 	if err != nil {
@@ -150,7 +157,7 @@ func (g *Git) Connect(url string) error {
 		return nil // remote has no commits yet
 	}
 	if _, err := g.run("reset", "--hard", "origin/main"); err != nil {
-		return fmt.Errorf("git reset to origin/main: %w", err)
+		return err
 	}
 	return nil
 }
@@ -158,7 +165,7 @@ func (g *Git) Connect(url string) error {
 // RemoteAdd registers origin.
 func (g *Git) RemoteAdd(url string) error {
 	if _, err := g.run("remote", "add", "origin", url); err != nil {
-		return fmt.Errorf("git remote add: %w", err)
+		return err
 	}
 	return nil
 }
@@ -203,11 +210,11 @@ func (g *Git) commitAll(message string) (bool, error) {
 		return false, nil
 	}
 	if _, err := g.run("add", "-A"); err != nil {
-		return false, fmt.Errorf("git add: %w", err)
+		return false, err
 	}
 	g.ensureIdentity()
 	if _, err := g.run("commit", "-m", message); err != nil {
-		return false, fmt.Errorf("git commit: %w", err)
+		return false, err
 	}
 	return true, nil
 }
@@ -240,6 +247,11 @@ func (g *Git) SmartPull(resolve Resolver) ([]string, error) {
 const miseFile = "mise.toml"
 
 func (g *Git) sync(resolve Resolver) ([]string, error) {
+	// DESIGN.md Case F: manual edits are auto-committed before any pull
+	// or reset, so nothing is ever destroyed by a reconciliation.
+	if _, err := g.commitAll("mison: manual changes"); err != nil {
+		return nil, err
+	}
 	if err := g.fetch(); err != nil {
 		return nil, err
 	}
@@ -353,8 +365,8 @@ func (g *Git) configAt(rev string) (*env.Config, error) {
 	return cfg, nil
 }
 
-// writeDeclaration rewrites the [tools] table of cfg with merged and
-// returns nothing; caller then serializes cfg separately.
+// writeDeclaration rewrites the [tools] table of cfg with the merged
+// tool set and writes the serialized document into dir/mise.toml.
 func writeDeclaration(dir string, cfg *env.Config, tools []env.Tool) error {
 	for _, t := range cfg.Tools() {
 		cfg.RemoveTool(t.Name)

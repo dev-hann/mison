@@ -3,10 +3,8 @@
 package ui
 
 import (
-	"bufio"
 	"fmt"
 	"io"
-	"strings"
 )
 
 // Status markers used across mison output.
@@ -63,22 +61,4 @@ func (r *Renderer) ToolLine(mark, name, detail string) {
 		return
 	}
 	r.printf("%s %s (%s)\n", mark, name, detail)
-}
-
-// Prompt asks a yes/no question and reads one line from in.
-// It returns false when input is unavailable (non-interactive).
-func Prompt(in io.Reader, w io.Writer, question string) bool {
-	_, _ = fmt.Fprintf(w, "%s %s [y/N] ", MarkWarning, question)
-	reader := bufio.NewReader(in)
-	line, err := reader.ReadString('\n')
-	if err != nil && line == "" {
-		_, _ = fmt.Fprintln(w, "")
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(line)) {
-	case "y", "yes":
-		return true
-	default:
-		return false
-	}
 }

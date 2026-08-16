@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/dev-hann/mison/internal/xdg"
 )
 
 // DefaultRepoName is the environment repository mison creates.
@@ -37,12 +39,7 @@ func (c *Client) run(interactive bool, args ...string) (string, error) {
 // miseEnv prepends mise shims so `gh` resolves after `mise install gh`.
 func miseEnv() []string {
 	home, _ := os.UserHomeDir()
-	xdg := os.Getenv("XDG_DATA_HOME")
-	base := home + "/.local/share"
-	if xdg != "" {
-		base = xdg
-	}
-	path := base + "/mise/shims:" + home + "/.local/bin:" + os.Getenv("PATH")
+	path := xdg.MiseShims(home) + ":" + xdg.MiseBin(home) + ":" + os.Getenv("PATH")
 	env := []string{"PATH=" + path}
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "PATH=") {

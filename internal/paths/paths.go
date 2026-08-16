@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/dev-hann/mison/internal/xdg"
 )
 
 // Layout describes every path mison touches for a given home directory.
@@ -21,7 +23,7 @@ type Layout struct {
 
 // New resolves the layout under the default XDG config dir.
 func New(home string) Layout {
-	return NewEnv(home, os.Getenv("XDG_CONFIG_HOME"))
+	return NewEnv(home, xdg.ConfigDir(home))
 }
 
 // NewEnv resolves the layout with an explicit XDG_CONFIG_HOME value.

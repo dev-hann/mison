@@ -10,27 +10,33 @@ import (
 	"github.com/dev-hann/mison/internal/env"
 )
 
-// keepLocal / acceptRemote are simple resolvers for tests.
+// keepLocal / acceptRemote are simple resolvers for tests; a removal
+// (empty tool on that side) wins over the other side's edit.
 func keepLocal(cs []env.Conflict) ([]env.Tool, error) {
-	out := make([]env.Tool, len(cs))
-	for i, c := range cs {
-		if c.Local.Name == "" {
-			continue // removal wins on local side
+	var out []env.Tool
+	for _, c := range cs {
+		if t := pick(c.Local, c.Remote); t.Name != "" {
+			out = append(out, t)
 		}
-		out[i] = c.Local
 	}
 	return out, nil
 }
 
 func acceptRemote(cs []env.Conflict) ([]env.Tool, error) {
-	out := make([]env.Tool, len(cs))
-	for i, c := range cs {
-		if c.Remote.Name == "" {
-			continue
+	var out []env.Tool
+	for _, c := range cs {
+		if t := pick(c.Remote, c.Local); t.Name != "" {
+			out = append(out, t)
 		}
-		out[i] = c.Remote
 	}
 	return out, nil
+}
+
+func pick(primary, fallback env.Tool) env.Tool {
+	if primary.Name == "" && fallback.Name != "" {
+		return fallback
+	}
+	return primary
 }
 
 // newBareRemote creates a bare repo seeded with an initial commit
@@ -424,5 +430,40 @@ func TestSyncStatusDiverged(t *testing.T) {
 	}
 	if info.State != SyncDiverged {
 		t.Errorf("State = %v, want SyncDiverged", info.State)
+	}
+}
+
+func TestSmartPullPreservesManualEdits(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	// A pushes a new tool
+	writeToml(t, a, "[tools]\nnode = \"22\"\n")
+	if _, err := a.SmartPush("install: node", keepLocal); err != nil {
+		t.Fatal(err)
+	}
+
+	// B edits mise.toml by hand (uncommitted) — DESIGN.md Case F
+	writeToml(t, b, "[tools]\njq = \"latest\"\n")
+
+	if _, err := b.SmartPull(keepLocal); err != nil {
+		t.Fatalf("SmartPull() error = %v", err)
+	}
+
+	// both B's manual edit and A's remote tool must survive
+	localData, err := os.ReadFile(filepath.Join(b.dir, "mise.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"jq", "node"} {
+		if !strings.Contains(string(localData), want) {
+			t.Errorf("B local missing %s after pull with manual edit:\n%s", want, localData)
+		}
+	}
+	// and the merged result must be pushed
+	remoteToml := readRemoteToml(t, remote)
+	if !strings.Contains(remoteToml, "jq") {
+		t.Errorf("remote missing manual edit:\n%s", remoteToml)
 	}
 }

@@ -57,13 +57,12 @@ func TestShimPathUsesHome(t *testing.T) {
 }
 
 func TestShimPathRespectsEnvOverride(t *testing.T) {
-	got := ShimPathEnv("/home/u", "/xdg/data")
-	want := "/xdg/data/mise/shims"
-	if got != want {
-		t.Fatalf("ShimPathEnv() = %q, want %q", got, want)
+	t.Setenv("XDG_DATA_HOME", "/xdg/data")
+	if got := ShimPath("/home/u"); got != "/xdg/data/mise/shims" {
+		t.Fatalf("ShimPath() = %q, want /xdg/data/mise/shims", got)
 	}
-	// empty override falls back to default
-	if fallback := ShimPathEnv("/home/u", ""); fallback != "/home/u/.local/share/mise/shims" {
-		t.Fatalf("ShimPathEnv() fallback = %q", fallback)
+	t.Setenv("XDG_DATA_HOME", "")
+	if got := ShimPath("/home/u"); got != "/home/u/.local/share/mise/shims" {
+		t.Fatalf("ShimPath() fallback = %q", got)
 	}
 }

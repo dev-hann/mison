@@ -23,13 +23,16 @@ Run `make lint && make test` before finishing any task. Fix failures yourself.
 ## Architecture map
 
 ```
-cmd/mison/          entrypoint (thin)
+cmd/mison/          entrypoint (thin; version injected via ldflags)
 internal/cli/       cobra commands — no business logic here
 internal/ui/        output rendering (✓/↻/✗/⚠)
 internal/detector/  OS/arch/mise detection (pure)
+internal/xdg/       single source of XDG-aware paths (config/data, mise shims)
 internal/mise/      mise engine wrapper (Manager interface)
 internal/env/       mise.toml read/write/diff (pure logic — TDD core)
-internal/gitclient/ env repo git operations (M2)
+internal/gitclient/ env repo git operations (semantic merge policy)
+internal/gh/        gh CLI wrapper (auth, repo create)
+internal/e2e/       real-world tests, build tag `e2e`
 ```
 
 Dependency direction: cli → {detector, mise, env, gitclient, ui}.

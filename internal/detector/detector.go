@@ -3,9 +3,10 @@
 package detector
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/dev-hann/mison/internal/xdg"
 )
 
 // LookPathFunc resolves an executable name to a path (os/exec.LookPath).
@@ -33,17 +34,7 @@ func MiseBinaryPath(home string) string {
 	return filepath.Join(home, ".local", "bin", "mise")
 }
 
-// ShimPath returns the default mise shims directory for home.
+// ShimPath returns the mise shims directory for home (XDG-aware).
 func ShimPath(home string) string {
-	return ShimPathEnv(home, os.Getenv("XDG_DATA_HOME"))
-}
-
-// ShimPathEnv resolves the shims directory, honoring XDG_DATA_HOME
-// when set (mise: $XDG_DATA_HOME/mise/shims, else ~/.local/share/mise/shims).
-func ShimPathEnv(home, xdgData string) string {
-	base := filepath.Join(home, ".local", "share")
-	if xdgData != "" {
-		base = xdgData
-	}
-	return filepath.Join(base, "mise", "shims")
+	return xdg.MiseShims(home)
 }

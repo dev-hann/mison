@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dev-hann/mison/internal/xdg"
 )
 
 // Tool mirrors an installed tool reported by mise.
@@ -62,16 +64,18 @@ func (m *RealManager) Version() (string, error) {
 
 // Install runs the official mise.run installer script.
 func (m *RealManager) Install() error {
-	if _, err := m.exec.Run(m.env(), "sh", "-c", "curl -fsSL https://mise.run | sh"); err != nil {
-		return fmt.Errorf("install mise: %w", err)
+	out, err := m.exec.Run(m.env(), "sh", "-c", "curl -fsSL https://mise.run | sh")
+	if err != nil {
+		return fmt.Errorf("install mise: %w — %s", err, strings.TrimSpace(out))
 	}
 	return nil
 }
 
 // Exec runs an arbitrary mise command with shims on PATH.
 func (m *RealManager) Exec(args ...string) error {
-	if _, err := m.exec.Run(m.env(), "mise", args...); err != nil {
-		return fmt.Errorf("mise %s: %w", strings.Join(args, " "), err)
+	out, err := m.exec.Run(m.env(), "mise", args...)
+	if err != nil {
+		return fmt.Errorf("mise %s: %w — %s", strings.Join(args, " "), err, strings.TrimSpace(out))
 	}
 	return nil
 }
@@ -131,11 +135,7 @@ func (p pathSet) has(path string) bool {
 }
 
 func (m *RealManager) ownConfigPaths() pathSet {
-	configDir := filepath.Join(m.home, ".config")
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		configDir = xdg
-	}
-	global := filepath.Join(configDir, "mise", "config.toml")
+	global := filepath.Join(xdg.ConfigDir(m.home), "mise", "config.toml")
 	decl := filepath.Join(m.home, ".mison", "env", "mise.toml")
 
 	set := pathSet{}
@@ -151,13 +151,7 @@ func (m *RealManager) ownConfigPaths() pathSet {
 // env builds the execution environment: shim dir and mise bin dir
 // prepended to PATH so mison never depends on shell activation.
 func (m *RealManager) env() []string {
-	shims := filepath.Join(m.home, ".local", "share", "mise", "shims")
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		shims = filepath.Join(xdg, "mise", "shims")
-	}
-	miseBin := filepath.Join(m.home, ".local", "bin")
-
-	path := shims + ":" + miseBin
+	path := xdg.MiseShims(m.home) + ":" + xdg.MiseBin(m.home)
 	if cur := os.Getenv("PATH"); cur != "" {
 		path += ":" + cur
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 // NewRootCmd builds the mison root command with all subcommands.
-func NewRootCmd(app *App) *cobra.Command {
+func NewRootCmd(app *App, version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mison",
 		Short: "Reproduce your development environment anywhere",
@@ -29,7 +29,7 @@ Core workflow:
   mison uninstall <tools> remove tools from the environment
   mison sync              pull latest declaration and apply it
   mison status            compare declaration with installed tools`,
-		Version: "0.1.0-dev",
+		Version: version,
 	}
 
 	install := newInstallCmd(app)
@@ -109,7 +109,7 @@ func osSpecFromFlags(cmd *cobra.Command) (string, error) {
 }
 
 // Execute runs the root command with real dependencies.
-func Execute() error {
+func Execute(version string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
@@ -123,7 +123,7 @@ func Execute() error {
 		Git:      func(dir string) Repo { return gitclient.New(dir) },
 		Gh:       gh.New(),
 	}
-	return NewRootCmd(app).Execute()
+	return NewRootCmd(app, version).Execute()
 }
 
 func newInitCmd(app *App) *cobra.Command {

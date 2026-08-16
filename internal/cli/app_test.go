@@ -368,3 +368,42 @@ func TestRunSyncRestoresGlobalSymlink(t *testing.T) {
 		t.Fatalf("global symlink not restored by sync: %v", err)
 	}
 }
+
+func TestRunInstallWarnsOSSkip(t *testing.T) {
+	app, _, out := newTestApp(t)
+
+	if err := app.RunInstall([]string{"docker"}, "macos", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "docker: restricted to macos — skipped on this machine") {
+		t.Errorf("missing OS skip warning:\n%s", out.String())
+	}
+}
+
+func TestRunInstallWarnsStillMissing(t *testing.T) {
+	app, _, out := newTestApp(t)
+	// fakeMise installs nothing, so node stays missing after Exec
+
+	if err := app.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "node not visible to mise") {
+		t.Errorf("missing post-install verification warning:\n%s", out.String())
+	}
+}
+
+func TestRunSyncWarnsStillMissing(t *testing.T) {
+	repo := &fakeRepo{}
+	app, fm, out := newTestAppWith(t, repo)
+	if err := app.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+		t.Fatal(err)
+	}
+	fm.execCalls = nil
+
+	if err := app.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "node not visible to mise") {
+		t.Errorf("missing post-sync verification warning:\n%s", out.String())
+	}
+}
