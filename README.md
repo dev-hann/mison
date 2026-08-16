@@ -39,8 +39,16 @@ it at any time.
 Requirements: `git`, `curl`. Everything else (mise, gh, tools) is
 bootstrapped automatically.
 
+Download a binary from the [releases page](https://github.com/dev-hann/mison/releases)
+(linux/darwin · amd64/arm64):
+
 ```bash
-# from source (releases coming)
+tar xzf mison_linux_amd64.tar.gz && mv mison ~/.local/bin/
+```
+
+Or build from source:
+
+```bash
 git clone https://github.com/dev-hann/mison
 cd mison && go build -o ~/.local/bin/mison ./cmd/mison
 ```

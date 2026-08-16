@@ -9,6 +9,9 @@ build:
 test:
 	go test ./...
 
+test-e2e:
+	go test -tags e2e ./internal/e2e/
+
 test-coverage:
 	go test -coverprofile=coverage.txt ./...
 	go tool cover -func=coverage.txt | tail -1

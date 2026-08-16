@@ -11,6 +11,7 @@ import (
 
 	"github.com/dev-hann/mison/internal/detector"
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/gitclient"
 	"github.com/dev-hann/mison/internal/mise"
 	"github.com/dev-hann/mison/internal/paths"
 	"github.com/dev-hann/mison/internal/ui"
@@ -175,6 +176,7 @@ func (a *App) RunStatus() error {
 
 	r := a.ui()
 	r.Line("Environment status")
+	a.renderSyncStatus()
 	var missing int
 	for _, st := range diff {
 		switch st.State {
@@ -324,4 +326,29 @@ func toEnvTools(tools []mise.Tool) []env.Tool {
 		out[i] = env.Tool{Name: t.Name, Version: t.Version}
 	}
 	return out
+}
+
+// renderSyncStatus prints the local-vs-GitHub declaration relation.
+func (a *App) renderSyncStatus() {
+	r := a.ui()
+	repo := a.Git(a.layout().EnvDir)
+	if !repo.IsRepo() {
+		r.Line("Sync: not connected — run mison init to link GitHub")
+		return
+	}
+	info, err := repo.SyncStatus()
+	if err != nil {
+		r.Warn("could not compare with GitHub (" + err.Error() + ")")
+		return
+	}
+	switch info.State {
+	case gitclient.SyncUpToDate:
+		r.Step("up to date with GitHub")
+	case gitclient.SyncBehind:
+		r.ToolLine(ui.MarkSync, "remote has new tools", strings.Join(info.RemoteAdded, ", ")+" — run mison sync")
+	case gitclient.SyncAhead:
+		r.ToolLine(ui.MarkWarning, "local changes not pushed", "run mison sync")
+	case gitclient.SyncDiverged:
+		r.ToolLine(ui.MarkWarning, "diverged from GitHub", "local and remote both changed — run mison sync")
+	}
 }

@@ -348,3 +348,81 @@ func TestSmartPushWithoutGitIdentity(t *testing.T) {
 		t.Fatalf("remote missing ripgrep:\n%s", got)
 	}
 }
+
+func TestSyncStatusUpToDate(t *testing.T) {
+	remote := newBareRemote(t)
+	g := newClone(t, remote, "a")
+	writeToml(t, g, "[tools]\nnode = \"22\"\n")
+	if _, err := g.SmartPush("install: node", keepLocal); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := g.SyncStatus()
+	if err != nil {
+		t.Fatalf("SyncStatus() error = %v", err)
+	}
+	if info.State != SyncUpToDate {
+		t.Errorf("State = %v, want SyncUpToDate", info.State)
+	}
+}
+
+func TestSyncStatusBehind(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	writeToml(t, a, "[tools]\nnode = \"22\"\ngo = \"1.25\"\n")
+	if _, err := a.SmartPush("install: node go", keepLocal); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := b.SyncStatus()
+	if err != nil {
+		t.Fatalf("SyncStatus() error = %v", err)
+	}
+	if info.State != SyncBehind {
+		t.Errorf("State = %v, want SyncBehind", info.State)
+	}
+	if len(info.RemoteAdded) != 2 {
+		t.Errorf("RemoteAdded = %v, want [go node]", info.RemoteAdded)
+	}
+}
+
+func TestSyncStatusAhead(t *testing.T) {
+	remote := newBareRemote(t)
+	g := newClone(t, remote, "a")
+	writeToml(t, g, "[tools]\nnode = \"22\"\n")
+	git(t, g.dir, "add", "-A")
+	git(t, g.dir, "commit", "-m", "offline edit")
+
+	info, err := g.SyncStatus()
+	if err != nil {
+		t.Fatalf("SyncStatus() error = %v", err)
+	}
+	if info.State != SyncAhead {
+		t.Errorf("State = %v, want SyncAhead", info.State)
+	}
+}
+
+func TestSyncStatusDiverged(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	writeToml(t, a, "[tools]\nnode = \"22\"\n")
+	if _, err := a.SmartPush("install: node", keepLocal); err != nil {
+		t.Fatal(err)
+	}
+
+	writeToml(t, b, "[tools]\nripgrep = \"latest\"\n")
+	git(t, b.dir, "add", "-A")
+	git(t, b.dir, "commit", "-m", "local edit")
+
+	info, err := b.SyncStatus()
+	if err != nil {
+		t.Fatalf("SyncStatus() error = %v", err)
+	}
+	if info.State != SyncDiverged {
+		t.Errorf("State = %v, want SyncDiverged", info.State)
+	}
+}

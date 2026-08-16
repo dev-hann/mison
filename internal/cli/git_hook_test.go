@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dev-hann/mison/internal/gitclient"
 	"github.com/dev-hann/mison/internal/mise"
 )
 
@@ -187,5 +188,36 @@ func TestRunInitExistingEmptyRepoSeedsInitialPush(t *testing.T) {
 	}
 	if len(repo.pushes) == 0 || repo.pushes[0] != "mison: init environment" {
 		t.Errorf("seed push missing: %v", repo.pushes)
+	}
+}
+
+func TestRunStatusShowsSyncSection(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, syncState: gitclient.SyncBehind, remoteAdded: []string{"node", "go"}}
+	app, _, out := newTestAppWith(t, repo)
+	if err := app.RunInstall([]string{"rg"}, "", PolicyAsk); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "↻ remote has new tools (node, go — run mison sync)") {
+		t.Errorf("missing behind hint:\n%s", got)
+	}
+}
+
+func TestRunStatusSyncUpToDate(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, syncState: gitclient.SyncUpToDate}
+	app, _, out := newTestAppWith(t, repo)
+	if err := app.RunInstall([]string{"rg"}, "", PolicyAsk); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "up to date with GitHub") {
+		t.Errorf("missing up-to-date line:\n%s", out.String())
 	}
 }

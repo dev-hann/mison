@@ -17,6 +17,7 @@ type Repo interface {
 	RemoteAdd(url string) error
 	RemoteURL() string
 	RemoteIsEmpty() bool
+	SyncStatus() (gitclient.SyncInfo, error)
 	SmartPush(message string, resolve gitclient.Resolver) ([]string, error)
 	SmartPull(resolve gitclient.Resolver) ([]string, error)
 }

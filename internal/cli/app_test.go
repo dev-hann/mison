@@ -49,6 +49,9 @@ type fakeRepo struct {
 	mergedOn    []string
 	connected   []string
 	remoteEmpty bool
+	syncState   gitclient.SyncState
+	remoteAdded []string
+	syncErr     error
 }
 
 func (f *fakeRepo) IsRepo() bool { return f.isRepo }
@@ -76,6 +79,9 @@ func (f *fakeRepo) Connect(url string) error {
 	return nil
 }
 func (f *fakeRepo) RemoteIsEmpty() bool { return f.remoteEmpty }
+func (f *fakeRepo) SyncStatus() (gitclient.SyncInfo, error) {
+	return gitclient.SyncInfo{State: f.syncState, RemoteAdded: f.remoteAdded}, f.syncErr
+}
 
 type fakeGh struct {
 	installed bool

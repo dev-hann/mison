@@ -52,6 +52,76 @@ func (g *Git) Init() error {
 	return nil
 }
 
+// SyncState describes the local clone's relation to origin/main.
+type SyncState int
+
+// Sync states.
+const (
+	SyncUpToDate SyncState = iota
+	SyncAhead
+	SyncBehind
+	SyncDiverged
+)
+
+// SyncInfo is the result of a read-only remote comparison.
+type SyncInfo struct {
+	State       SyncState
+	RemoteAdded []string // tool names the remote gained (Behind)
+	LocalAdded  []string // tool names only local has (Ahead/Diverged)
+}
+
+// SyncStatus fetches and compares the local declaration with the remote
+// without modifying anything. Read-only counterpart to SmartPull.
+func (g *Git) SyncStatus() (SyncInfo, error) {
+	var info SyncInfo
+	if err := g.fetch(); err != nil {
+		return info, err
+	}
+	head, err := g.rev("HEAD")
+	if err != nil {
+		return info, fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+	remote, err := g.rev("origin/main")
+	if err != nil {
+		return info, fmt.Errorf("no remote main: %w", err)
+	}
+
+	if head == remote {
+		info.State = SyncUpToDate
+		return info, nil
+	}
+
+	mbOut, mbErr := g.run("merge-base", head, remote)
+	mb := strings.TrimSpace(mbOut)
+	if mbErr != nil {
+		mb = "" // unrelated histories
+	}
+
+	localCfg, err := g.configAt(head)
+	if err != nil {
+		return info, err
+	}
+	remoteCfg, err := g.configAt(remote)
+	if err != nil {
+		return info, err
+	}
+	localTools, remoteTools := localCfg.Tools(), remoteCfg.Tools()
+
+	switch mb {
+	case remote:
+		info.State = SyncAhead
+		info.LocalAdded = diffNames(remoteTools, localTools)
+	case head:
+		info.State = SyncBehind
+		info.RemoteAdded = diffNames(localTools, remoteTools)
+	default:
+		info.State = SyncDiverged
+		info.LocalAdded = diffNames(remoteTools, localTools)
+		info.RemoteAdded = diffNames(localTools, remoteTools)
+	}
+	return info, nil
+}
+
 // RemoteIsEmpty reports whether origin has no commits (fresh repo).
 func (g *Git) RemoteIsEmpty() bool {
 	_, err := g.rev("origin/main")
