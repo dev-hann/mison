@@ -1,42 +1,42 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/dev-hann/mison/internal/env"
 	"github.com/dev-hann/mison/internal/ui"
+	"github.com/dev-hann/mison/internal/usecase"
 )
 
-// Reporter is the one-way notification port: business flows report
-// what happened through it and never read anything back. The keek-news
-// "dumb widget" equivalent — flows own no rendering knowledge.
-type Reporter interface {
-	Step(msg string)   // ✓ completed local action
-	Synced(msg string) // ↻ remote merge notice (always shown)
-	Warn(msg string)   // ⚠ non-fatal issue
-	Fail(msg string)   // ✗ fatal issue
-	Line(msg string)   // plain output
-	ToolLine(mark, name, detail string)
-}
-
-// Prompter is the two-way confirmation port: blocking questions whose
-// answers gate destructive or ambiguous steps.
-type Prompter interface {
-	Confirm(question string) bool                     // y/N gate
-	ResolveConflict(c env.Conflict) (env.Tool, error) // [1/2] gate
-}
-
-// TermUI implements Reporter and Prompter on a terminal, sharing the
-// app's lazy buffered reader so consecutive prompts never lose input.
+// TermUI implements usecase.Reporter and usecase.Prompter on a
+// terminal. It owns a single buffered reader so consecutive prompts
+// never lose buffered input.
 type TermUI struct {
-	app *App
+	out    io.Writer
+	in     io.Reader
+	reader *bufio.Reader
 }
 
-// NewTermUI builds the terminal interaction adapter for an app.
-func NewTermUI(app *App) *TermUI { return &TermUI{app: app} }
+// NewTermUI builds the terminal interaction adapter.
+func NewTermUI(out io.Writer, in io.Reader) *TermUI {
+	return &TermUI{out: out, in: in}
+}
 
-func (t *TermUI) r() *ui.Renderer { return t.app.ui() }
+func (t *TermUI) r() *ui.Renderer { return ui.New(t.out) }
+
+func (t *TermUI) readLine() string {
+	if t.reader == nil {
+		t.reader = bufio.NewReader(t.in)
+	}
+	line, err := t.reader.ReadString('\n')
+	if err != nil && line == "" {
+		return ""
+	}
+	return line
+}
 
 // Step implements Reporter.
 func (t *TermUI) Step(msg string) { t.r().Step(msg) }
@@ -60,8 +60,8 @@ func (t *TermUI) ToolLine(mark, name, detail string) {
 
 // Confirm implements Prompter.
 func (t *TermUI) Confirm(question string) bool {
-	_, _ = fmt.Fprintf(t.app.Stdout, "%s %s [y/N] ", ui.MarkWarning, question)
-	switch strings.ToLower(strings.TrimSpace(t.app.readLine())) {
+	_, _ = fmt.Fprintf(t.out, "%s %s [y/N] ", ui.MarkWarning, question)
+	switch strings.ToLower(strings.TrimSpace(t.readLine())) {
 	case "y", "yes":
 		return true
 	default:
@@ -81,13 +81,13 @@ func (t *TermUI) ResolveConflict(c env.Conflict) (env.Tool, error) {
 	}
 	t.Fail(fmt.Sprintf("Conflict on %s (this machine: %s, remote: %s)", c.Name, localDesc, remoteDesc))
 	t.Line("  [1] keep this machine  [2] accept remote")
-	_, _ = fmt.Fprint(t.app.Stdout, "Choose [1/2]: ")
+	_, _ = fmt.Fprint(t.out, "Choose [1/2]: ")
 
-	switch strings.TrimSpace(t.app.readLine()) {
+	switch strings.TrimSpace(t.readLine()) {
 	case "1":
-		return pickSide(c.Local, c.Remote), nil
+		return usecase.PickSide(c.Local, c.Remote), nil
 	case "2":
-		return pickSide(c.Remote, c.Local), nil
+		return usecase.PickSide(c.Remote, c.Local), nil
 	default:
 		return env.Tool{}, fmt.Errorf("conflict on %s unresolved — aborting (local changes kept unpushed)", c.Name)
 	}

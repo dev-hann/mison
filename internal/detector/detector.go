@@ -1,13 +1,9 @@
-// Package detector inspects the current system (OS, arch, mise presence).
-// All filesystem/environment access is injected so tests stay pure.
+// Package detector inspects the current system (OS, arch, mise
+// presence). Path resolution lives in internal/xdg; this package stays
+// pure detection only.
 package detector
 
-import (
-	"path/filepath"
-	"runtime"
-
-	"github.com/dev-hann/mison/internal/xdg"
-)
+import "runtime"
 
 // LookPathFunc resolves an executable name to a path (os/exec.LookPath).
 type LookPathFunc func(name string) (string, error)
@@ -27,14 +23,4 @@ func Detect() Info {
 func IsMiseInstalled(lookPath LookPathFunc) bool {
 	_, err := lookPath("mise")
 	return err == nil
-}
-
-// MiseBinaryPath returns the standard mise.run install location for home.
-func MiseBinaryPath(home string) string {
-	return filepath.Join(home, ".local", "bin", "mise")
-}
-
-// ShimPath returns the mise shims directory for home (XDG-aware).
-func ShimPath(home string) string {
-	return xdg.MiseShims(home)
 }

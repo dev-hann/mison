@@ -38,31 +38,3 @@ func TestIsMiseInstalledNotFound(t *testing.T) {
 		t.Fatal("IsMiseInstalled() = true, want false")
 	}
 }
-
-func TestMiseBinaryPathUsesHome(t *testing.T) {
-	got := MiseBinaryPath("/home/u")
-	want := "/home/u/.local/bin/mise"
-	if got != want {
-		t.Fatalf("MiseBinaryPath() = %q, want %q", got, want)
-	}
-}
-
-func TestShimPathUsesHome(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "")
-	got := ShimPath("/home/u")
-	want := "/home/u/.local/share/mise/shims"
-	if got != want {
-		t.Fatalf("ShimPath() = %q, want %q", got, want)
-	}
-}
-
-func TestShimPathRespectsEnvOverride(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "/xdg/data")
-	if got := ShimPath("/home/u"); got != "/xdg/data/mise/shims" {
-		t.Fatalf("ShimPath() = %q, want /xdg/data/mise/shims", got)
-	}
-	t.Setenv("XDG_DATA_HOME", "")
-	if got := ShimPath("/home/u"); got != "/home/u/.local/share/mise/shims" {
-		t.Fatalf("ShimPath() fallback = %q", got)
-	}
-}

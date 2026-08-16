@@ -1,3 +1,5 @@
+// Package cli wires the mison command tree: cobra parsing and adapter
+// assembly only — all logic lives in usecase.
 package cli
 
 import (
@@ -8,13 +10,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/dev-hann/mison/internal/gh"
-	"github.com/dev-hann/mison/internal/gitclient"
-	"github.com/dev-hann/mison/internal/mise"
+	"github.com/dev-hann/mison/internal/repo/gitrepo"
+	"github.com/dev-hann/mison/internal/repo/miserepo"
+	"github.com/dev-hann/mison/internal/service"
+	"github.com/dev-hann/mison/internal/usecase"
 )
 
 // NewRootCmd builds the mison root command with all subcommands.
-func NewRootCmd(app *App, version string) *cobra.Command {
+func NewRootCmd(f *usecase.Flows, version string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mison",
 		Short: "Reproduce your development environment anywhere",
@@ -32,62 +35,46 @@ Core workflow:
 		Version: version,
 	}
 
-	install := newInstallCmd(app)
-	addOSFlags(install.Flags())
-	addConflictFlags(install.Flags())
-
-	uninstall := newUninstallCmd(app)
-	uninstall.Flags().BoolP("yes", "y", false, "skip confirmation")
-	addConflictFlags(uninstall.Flags())
-
-	sync := newSyncCmd(app)
-	sync.Flags().Bool("prune", false, "remove undeclared tools without prompting")
-	addConflictFlags(sync.Flags())
-
-	initCmd := newInitCmd(app)
-	initCmd.Flags().String("repo", gh.DefaultRepoName, "environment repository name (owner/name or name)")
-
 	root.AddCommand(
-		initCmd,
-		install,
-		uninstall,
-		sync,
-		newStatusCmd(app),
+		newInitCmd(f),
+		newInstallCmd(f),
+		newUninstallCmd(f),
+		newSyncCmd(f),
+		newStatusCmd(f),
 	)
 	return root
 }
 
-// addConflictFlags registers non-interactive conflict resolution.
-func addConflictFlags(f *pflag.FlagSet) {
-	f.Bool("ours", false, "keep this machine's version on conflict")
-	f.Bool("theirs", false, "accept the remote version on conflict")
-}
-
-func conflictPolicy(cmd *cobra.Command) (ConflictPolicy, error) {
-	ours, _ := cmd.Flags().GetBool("ours")
-	theirs, _ := cmd.Flags().GetBool("theirs")
-	if ours && theirs {
-		return PolicyAsk, fmt.Errorf("--ours and --theirs are mutually exclusive")
+// Execute runs the root command with real dependencies.
+func Execute(version string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home directory: %w", err)
 	}
-	if ours {
-		return PolicyOurs, nil
+	runner := service.New()
+	f := &usecase.Flows{
+		Home: home,
+		Mise: miserepo.New(runner, home),
+		Look: exec.LookPath,
+		Git:  func(dir string) usecase.EnvRepoIface { return usecase.NewEngine(gitrepo.New(runner, dir)) },
+		Gh:   gitrepo.NewGitHub(runner, home),
 	}
-	if theirs {
-		return PolicyTheirs, nil
-	}
-	return PolicyAsk, nil
+	term := NewTermUI(os.Stdout, os.Stdin)
+	f.UI = term
+	f.Ask = term
+	return NewRootCmd(f, version).Execute()
 }
 
 // addOSFlags registers --mac and --linux with optional arch values:
 // --mac, --mac=arm64, --linux, --linux=x64.
-func addOSFlags(f *pflag.FlagSet) {
-	f.String("mac", "", "restrict install to macOS")
-	f.String("linux", "", "restrict install to Linux")
-	f.Lookup("mac").NoOptDefVal = "macos"
-	f.Lookup("linux").NoOptDefVal = "linux"
+func addOSFlags(fl *pflag.FlagSet) {
+	fl.String("mac", "", "restrict install to macOS")
+	fl.String("linux", "", "restrict install to Linux")
+	fl.Lookup("mac").NoOptDefVal = "macos"
+	fl.Lookup("linux").NoOptDefVal = "linux"
 }
 
-// osSpecFromFlags combines OS flags into a mise os spec ("" = no restriction).
+// osSpecFromFlags combines OS flags into a mise os spec ("" = none).
 func osSpecFromFlags(cmd *cobra.Command) (string, error) {
 	mac, _ := cmd.Flags().GetString("mac")
 	linux, _ := cmd.Flags().GetString("linux")
@@ -108,94 +95,25 @@ func osSpecFromFlags(cmd *cobra.Command) (string, error) {
 	return "", nil
 }
 
-// Execute runs the root command with real dependencies.
-func Execute(version string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home directory: %w", err)
-	}
-	app := &App{
-		Home:     home,
-		Stdout:   os.Stdout,
-		In:       os.Stdin,
-		Mise:     mise.NewManager(mise.OsExecutor{}, home),
-		LookPath: exec.LookPath,
-		Git:      func(dir string) Repo { return gitclient.New(dir) },
-		Gh:       gh.New(),
-	}
-	term := NewTermUI(app)
-	app.UI = term
-	app.Ask = term
-	return NewRootCmd(app, version).Execute()
+// addConflictFlags registers non-interactive conflict resolution.
+func addConflictFlags(fl *pflag.FlagSet) {
+	fl.Bool("ours", false, "keep this machine's version on conflict")
+	fl.Bool("theirs", false, "accept the remote version on conflict")
 }
 
-func newInitCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "Register this machine with a mison environment",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			repoName, _ := cmd.Flags().GetString("repo")
-			return app.RunInit(repoName)
-		},
+func conflictPolicy(cmd *cobra.Command) (usecase.ConflictPolicy, error) {
+	ours, _ := cmd.Flags().GetBool("ours")
+	theirs, _ := cmd.Flags().GetBool("theirs")
+	if ours && theirs {
+		return usecase.PolicyAsk, fmt.Errorf("--ours and --theirs are mutually exclusive")
 	}
-}
-
-func newInstallCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "install <tool>[@<version>]...",
-		Short: "Add tools to the environment and install them",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			osFlag, err := osSpecFromFlags(cmd)
-			if err != nil {
-				return err
-			}
-			policy, err := conflictPolicy(cmd)
-			if err != nil {
-				return err
-			}
-			return app.RunInstall(args, osFlag, policy)
-		},
+	if ours {
+		return usecase.PolicyOurs, nil
 	}
-}
-
-func newUninstallCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "uninstall <tool>...",
-		Short: "Remove tools from the environment",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			policy, err := conflictPolicy(cmd)
-			if err != nil {
-				return err
-			}
-			return app.RunUninstall(args, boolFlag(cmd, "yes"), policy)
-		},
+	if theirs {
+		return usecase.PolicyTheirs, nil
 	}
-}
-
-func newSyncCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "sync",
-		Short: "Pull the latest environment and apply it",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			policy, err := conflictPolicy(cmd)
-			if err != nil {
-				return err
-			}
-			return app.RunSync(boolFlag(cmd, "prune"), policy)
-		},
-	}
-}
-
-func newStatusCmd(app *App) *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Compare the declaration with installed tools",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return app.RunStatus()
-		},
-	}
+	return usecase.PolicyAsk, nil
 }
 
 func boolFlag(cmd *cobra.Command, name string) bool {

@@ -1,4 +1,4 @@
-package gitclient
+package usecase
 
 import (
 	"os"
@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/repo/gitrepo"
+	"github.com/dev-hann/mison/internal/repo/miserepo"
+	"github.com/dev-hann/mison/internal/service"
 )
 
 // keepLocal / acceptRemote are simple resolvers for tests; a removal
@@ -15,7 +18,7 @@ import (
 func keepLocal(cs []env.Conflict) ([]env.Tool, error) {
 	var out []env.Tool
 	for _, c := range cs {
-		if t := pick(c.Local, c.Remote); t.Name != "" {
+		if t := pickSide(c.Local, c.Remote); t.Name != "" {
 			out = append(out, t)
 		}
 	}
@@ -25,18 +28,16 @@ func keepLocal(cs []env.Conflict) ([]env.Tool, error) {
 func acceptRemote(cs []env.Conflict) ([]env.Tool, error) {
 	var out []env.Tool
 	for _, c := range cs {
-		if t := pick(c.Remote, c.Local); t.Name != "" {
+		if t := pickSide(c.Remote, c.Local); t.Name != "" {
 			out = append(out, t)
 		}
 	}
 	return out, nil
 }
 
-func pick(primary, fallback env.Tool) env.Tool {
-	if primary.Name == "" && fallback.Name != "" {
-		return fallback
-	}
-	return primary
+// newEngineAt builds a real-gitsvc engine over dir.
+func newEngineAt(dir string) *Engine {
+	return NewEngine(gitrepo.New(service.New(), dir))
 }
 
 // newBareRemote creates a bare repo seeded with an initial commit
@@ -64,14 +65,14 @@ func newBareRemote(t *testing.T) string {
 }
 
 // newClone clones the remote into a working dir with test identity.
-func newClone(t *testing.T, remote, name string) *Git {
+func newClone(t *testing.T, remote, name string) *Engine {
 	t.Helper()
 	parent := t.TempDir()
 	git(t, parent, "clone", remote, name)
 	dir := filepath.Join(parent, name)
 	git(t, dir, "config", "user.email", "test@mison")
 	git(t, dir, "config", "user.name", "mison-test")
-	return New(dir)
+	return newEngineAt(dir)
 }
 
 func git(t *testing.T, dir string, args ...string) string {
@@ -89,9 +90,9 @@ func git(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func writeToml(t *testing.T, g *Git, content string) {
+func writeToml(t *testing.T, e *Engine, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(g.dir, "mise.toml"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(e.Dir(), "mise.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -109,6 +110,27 @@ func readRemoteToml(t *testing.T, remote string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func TestPlanSyncTable(t *testing.T) {
+	cases := []struct {
+		name             string
+		head, remote, mb string
+		hasRemote        bool
+		want             SyncAction
+	}{
+		{"no remote", "a", "", "", false, ActionSeedRemote},
+		{"equal", "a", "a", "a", true, ActionPush},
+		{"ahead", "b", "a", "a", true, ActionPush},
+		{"behind", "a", "b", "a", true, ActionFastForward},
+		{"diverged", "a", "b", "c", true, ActionMerge},
+		{"unrelated histories", "a", "b", "", true, ActionMerge},
+	}
+	for _, c := range cases {
+		if got := PlanSync(c.head, c.remote, c.mb, c.hasRemote).Action; got != c.want {
+			t.Errorf("%s: PlanSync() = %v, want %v", c.name, got, c.want)
+		}
+	}
 }
 
 func TestSmartPushClean(t *testing.T) {
@@ -169,7 +191,7 @@ func TestSmartPushDivergedAutoMerge(t *testing.T) {
 	}
 
 	// B's local declaration must match the merged result
-	localData, _ := os.ReadFile(filepath.Join(b.dir, "mise.toml"))
+	localData, _ := os.ReadFile(filepath.Join(b.Dir(), "mise.toml"))
 	if !strings.Contains(string(localData), `node = "22"`) {
 		t.Errorf("B local missing node after merge:\n%s", localData)
 	}
@@ -236,7 +258,7 @@ func TestSmartPullFastForward(t *testing.T) {
 		t.Errorf("merged notice = %v, want [node]", merged)
 	}
 
-	localData, _ := os.ReadFile(filepath.Join(b.dir, "mise.toml"))
+	localData, _ := os.ReadFile(filepath.Join(b.Dir(), "mise.toml"))
 	if !strings.Contains(string(localData), `node = "22"`) {
 		t.Fatalf("B local after pull:\n%s", localData)
 	}
@@ -272,15 +294,15 @@ func TestSmartPullDivergedWithLocalPending(t *testing.T) {
 	}
 
 	writeToml(t, b, "[tools]\nripgrep = \"latest\"\n")
-	git(t, b.dir, "add", "-A")
-	git(t, b.dir, "commit", "-m", "install: ripgrep")
+	git(t, b.Dir(), "add", "-A")
+	git(t, b.Dir(), "commit", "-m", "install: ripgrep")
 
 	if _, err := b.SmartPull(keepLocal); err != nil {
 		t.Fatalf("SmartPull() error = %v", err)
 	}
 
 	// both sides' tools survive locally and on remote
-	localData, _ := os.ReadFile(filepath.Join(b.dir, "mise.toml"))
+	localData, _ := os.ReadFile(filepath.Join(b.Dir(), "mise.toml"))
 	for _, want := range []string{"node", "ripgrep"} {
 		if !strings.Contains(string(localData), want) {
 			t.Errorf("B local missing %s:\n%s", want, localData)
@@ -299,7 +321,7 @@ func TestIsRepo(t *testing.T) {
 		t.Fatal("IsRepo() = false for clone")
 	}
 
-	plain := New(t.TempDir())
+	plain := newEngineAt(t.TempDir())
 	if plain.IsRepo() {
 		t.Fatal("IsRepo() = true for plain dir")
 	}
@@ -307,11 +329,11 @@ func TestIsRepo(t *testing.T) {
 
 // newCloneBare clones without git identity (simulates a fresh machine
 // with no global git config).
-func newCloneBare(t *testing.T, remote, name string) *Git {
+func newCloneBare(t *testing.T, remote, name string) *Engine {
 	t.Helper()
 	parent := t.TempDir()
 	git(t, parent, "clone", remote, name)
-	return New(filepath.Join(parent, name))
+	return newEngineAt(filepath.Join(parent, name))
 }
 
 func TestConnectFreshDir(t *testing.T) {
@@ -327,7 +349,7 @@ func TestConnectFreshDir(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	g := New(dir)
+	g := newEngineAt(dir)
 
 	if err := g.Connect(remote); err != nil {
 		t.Fatalf("Connect() error = %v", err)
@@ -398,8 +420,8 @@ func TestSyncStatusAhead(t *testing.T) {
 	remote := newBareRemote(t)
 	g := newClone(t, remote, "a")
 	writeToml(t, g, "[tools]\nnode = \"22\"\n")
-	git(t, g.dir, "add", "-A")
-	git(t, g.dir, "commit", "-m", "offline edit")
+	git(t, g.Dir(), "add", "-A")
+	git(t, g.Dir(), "commit", "-m", "offline edit")
 
 	info, err := g.SyncStatus()
 	if err != nil {
@@ -421,8 +443,8 @@ func TestSyncStatusDiverged(t *testing.T) {
 	}
 
 	writeToml(t, b, "[tools]\nripgrep = \"latest\"\n")
-	git(t, b.dir, "add", "-A")
-	git(t, b.dir, "commit", "-m", "local edit")
+	git(t, b.Dir(), "add", "-A")
+	git(t, b.Dir(), "commit", "-m", "local edit")
 
 	info, err := b.SyncStatus()
 	if err != nil {
@@ -452,7 +474,7 @@ func TestSmartPullPreservesManualEdits(t *testing.T) {
 	}
 
 	// both B's manual edit and A's remote tool must survive
-	localData, err := os.ReadFile(filepath.Join(b.dir, "mise.toml"))
+	localData, err := os.ReadFile(filepath.Join(b.Dir(), "mise.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,5 +487,34 @@ func TestSmartPullPreservesManualEdits(t *testing.T) {
 	remoteToml := readRemoteToml(t, remote)
 	if !strings.Contains(remoteToml, "jq") {
 		t.Errorf("remote missing manual edit:\n%s", remoteToml)
+	}
+}
+
+func TestOwnedToolsFiltersBySourceAndActivity(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	ours := "/home/u/.config/mise/config.toml"
+	foreign := "/home/hann/.config/mise/config.toml"
+	entries := []miserepo.Entry{
+		{Name: "node", Version: "22.23.2", Active: true, Source: ours},
+		{Name: "go", Version: "1.25.1", Active: true, Source: ours},
+		{Name: "node", Version: "20.1.0", Active: false, Source: ours}, // inactive
+		{Name: "docker", Version: "1.0.0", Active: true, Source: foreign},
+	}
+
+	got := OwnedTools(entries, "/home/u")
+	if len(got) != 2 || got[0].Name != "go" || got[1].Name != "node" {
+		t.Fatalf("OwnedTools() = %+v, want [go node]", got)
+	}
+}
+
+func TestOwnedToolsMatchesDeclarationPathDirectly(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	entries := []miserepo.Entry{
+		{Name: "node", Version: "22.23.2", Active: true, Source: "/home/u/.mison/env/mise.toml"},
+	}
+
+	got := OwnedTools(entries, "/home/u")
+	if len(got) != 1 || got[0].Name != "node" {
+		t.Fatalf("OwnedTools() = %+v, want node via direct path", got)
 	}
 }

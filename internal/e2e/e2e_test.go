@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dev-hann/mison/internal/gh"
-	"github.com/dev-hann/mison/internal/mise"
+	"github.com/dev-hann/mison/internal/repo/gitrepo"
+	"github.com/dev-hann/mison/internal/repo/miserepo"
+	"github.com/dev-hann/mison/internal/service"
 )
 
 func TestMiseRunInstallsIntoTempHome(t *testing.T) {
@@ -33,9 +34,9 @@ func TestMiseRunInstallsIntoTempHome(t *testing.T) {
 	}
 }
 
-func TestManagerWorksAgainstRealMise(t *testing.T) {
+func TestMiseRepoAgainstRealMise(t *testing.T) {
 	home := os.Getenv("HOME")
-	m := mise.NewManager(mise.OsExecutor{}, home)
+	m := miserepo.New(service.New(), home)
 
 	if !m.IsInstalled() {
 		t.Fatal("mise not installed on this machine")
@@ -43,13 +44,14 @@ func TestManagerWorksAgainstRealMise(t *testing.T) {
 	if _, err := m.Version(); err != nil {
 		t.Fatalf("Version() error = %v", err)
 	}
-	if _, err := m.InstalledTools(); err != nil {
-		t.Fatalf("InstalledTools() error = %v", err)
+	if _, err := m.ListInstalled(); err != nil {
+		t.Fatalf("ListInstalled() error = %v", err)
 	}
 }
 
 func TestGhAuthAndRepoURL(t *testing.T) {
-	c := gh.New()
+	home := os.Getenv("HOME")
+	c := gitrepo.NewGitHub(service.New(), home)
 	if !c.IsInstalled() {
 		t.Skip("gh not installed")
 	}

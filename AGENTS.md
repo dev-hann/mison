@@ -4,8 +4,8 @@ Reproduce development environments across machines. mise is the engine,
 a GitHub repo holding `mise.toml` is the source of truth. Mison orchestrates.
 
 **Read before touching**: `docs/DESIGN.md` (behavior specs) and
-`docs/ARCHITECTURE.md` (package rules). When modifying `internal/gitclient/`,
-sync pipeline, or conflict handling, you MUST read `docs/DESIGN.md` first.
+`docs/ARCHITECTURE.md` (layer rules). When modifying sync/merge policy
+or command flows, you MUST read `docs/DESIGN.md` first.
 
 ## Commands
 
@@ -13,54 +13,77 @@ sync pipeline, or conflict handling, you MUST read `docs/DESIGN.md` first.
 mise install              # set up dev env (go, golangci-lint) — dogfooding
 make build                # build ./mison binary
 make test                 # go test ./...
-make test-coverage        # coverage report
+make test-e2e             # real-world tests (mise.run, gh auth)
 make lint                 # golangci-lint run
 make fmt                  # gofmt + go mod tidy
 ```
 
 Run `make lint && make test` before finishing any task. Fix failures yourself.
 
-## Architecture map
+## Architecture map (layered: cli → usecase → repo → service)
 
 ```
-cmd/mison/          entrypoint (thin; version injected via ldflags)
-internal/cli/       cobra commands — no business logic here
-internal/ui/        output rendering (✓/↻/✗/⚠)
-internal/detector/  OS/arch/mise detection (pure)
-internal/xdg/       single source of XDG-aware paths (config/data, mise shims)
-internal/mise/      mise engine wrapper (Manager interface)
-internal/env/       mise.toml read/write/diff (pure logic — TDD core)
-internal/gitclient/ env repo git operations (semantic merge policy)
-internal/gh/        gh CLI wrapper (auth, repo create)
-internal/e2e/       real-world tests, build tag `e2e`
+cmd/mison/            entrypoint (thin; version injected via ldflags)
+internal/cli/         cobra wiring + TermUI adapter only — no logic
+internal/usecase/     business flows: policy, error boundary, interaction ports
+internal/repo/
+  gitrepo/            atomic git + gh commands (recipes, no decisions)
+  miserepo/           atomic mise commands (raw data, no filtering)
+internal/service/     Runner: the ONLY place os/exec exists (process boundary)
+internal/env/         mise.toml read/write/diff (pure domain — TDD core)
+internal/detector/    OS/arch/mise detection (pure)
+internal/xdg/         single source of XDG-aware paths
+internal/paths/       on-disk layout (~/.mison/env, global-config symlink)
+internal/ui/          low-level renderer (✓/↻/✗/⚠) used by TermUI
+internal/e2e/         real-world tests, build tag `e2e`
 ```
 
-### cli file layout (one command, one file)
+### usecase layout (3 files)
+
+```
+internal/usecase/
+├── ports.go       Reporter (notify) + Prompter (confirm) + ConflictPolicy
+├── sync.go        PlanSync (pure), Engine (SmartPush/SmartPull/SyncStatus),
+│                  ownership filter, conflict-side rules
+└── commands.go    Flows: Install/Uninstall/Sync/Status/Init + error
+                   classification (fatal vs warn-and-defer)
+```
+
+### cli layout (one command, one thin file)
 
 ```
 internal/cli/
-├── app.go         App struct + shared helpers only (ui/layout/config IO)
-├── root.go        cobra wiring only
-├── interact.go    interaction ports: Reporter (notify) + Prompter (confirm)
-├── <command>.go   one command handler per file (install, uninstall,
-│                  sync, status, init) plus its private helpers
-└── git_hook.go    shared push policy (commitAndPush, conflict resolver)
+├── root.go        Execute wiring + flag helpers only
+├── interact.go    TermUI (implements Reporter + Prompter on a terminal)
+└── <command>.go   cobra shim per command (init, install, uninstall,
+                   sync, status) — parse flags, call flows
 ```
 
-Rules: App struct fields live only in app.go; a new command gets its
-own file; cross-command helpers go in app.go or git_hook.go.
+## Layer access rules
 
-### Interaction ports (business flows never touch io)
+```
+✅ cli   → usecase
+✅ usecase → repo/{gitrepo,miserepo}, service, env, paths, xdg, detector, ui
+✅ repo/gitrepo → service
+❌ service → anything above (it knows only env, name, args)
+❌ usecase → service.Runner directly (must go through repos)
+❌ repo/usecase → cli (ports only)
+```
 
-Flows reach the user exclusively through two ports on App:
+`service` is mison's process boundary — the only package that imports
+`os/exec`. It is generic by design: one Runner for git, gh, mise, and sh.
+
+## Interaction ports (business flows never touch io)
+
+Flows reach the user exclusively through two ports on Flows:
 
 - `UI Reporter` — one-way notifications (`Step/Synced/Warn/Fail/Line/ToolLine`)
 - `Ask Prompter` — blocking confirmations (`Confirm`, `ResolveConflict`)
 
 ```
-✅ Do    a.UI.Step("Installing node")      // notify
-✅ Do    if !a.Ask.Confirm("Remove?") ...  // gate a destructive step
-❌ Do not fmt.Fprint / fmt.Fprintf in command handlers
+✅ Do    f.UI.Step("Installing node")       // notify
+✅ Do    if !f.Ask.Confirm("Remove?") ...   // gate a destructive step
+❌ Do not fmt.Fprint / fmt.Fprintf in flows or repos
 ❌ Do not read os.Stdin in flows — answers come only from Ask
 ```
 
@@ -68,10 +91,7 @@ Rationale: showing and asking are different concerns; the split makes
 the "what is confirmed vs merely shown" policy explicit as types.
 Tests inject fakeReport/fakeAsk and assert which port calls a flow
 made, not rendered strings. Exception: gh device-flow login passes the
-process stdio through (child-process UI, not ours).
-
-Dependency direction: cli → {detector, mise, env, gitclient, ui}.
-Pure packages (`env`, `detector`, `ui`) must not import exec/os machinery.
+process stdio through (child-process UI, not ours) — via Runner.RunTTY.
 
 ## Design decisions (summary)
 
@@ -86,6 +106,7 @@ Pure packages (`env`, `detector`, `ui`) must not import exec/os machinery.
 | sync | pull → apply (os-filtered) → push pending → orphan prompt |
 | OS scoping | default all machines; `--mac`/`--linux[/x64|/arm64]` → mise `os` field |
 | Repo | private env repo, owned by mison (auto-commit manual edits) |
+| Layers | cli → usecase → repo → service; process boundary in service |
 
 Full rationale: `docs/DESIGN.md`.
 
@@ -93,26 +114,33 @@ Full rationale: `docs/DESIGN.md`.
 
 - Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`)
 - Trunk-based: `main` + short-lived `feat/*` branches
-- Errors: wrap with `fmt.Errorf("...: %w", err)`; user-facing messages only in `internal/ui`
-- No comments in code unless non-obvious; no `else` after return when avoidable
-- Table-driven tests, same-package test files
+- Errors: wrap with `fmt.Errorf("...: %w", err)`; service.Runner errors
+  are self-describing (command + stderr) — don't re-add prefixes
+- File name = primary type name (`runner.go` holds Runner); no comments
+  unless non-obvious; table-driven tests, same-package test files
 
 ## TDD rules (pragmatic)
 
-- **Pure logic** (`env`, `detector`, `ui`, merge/diff): strict RED-GREEN-REFACTOR.
-  Write the failing test first. Never write implementation before its test.
-- **I/O shells** (`mise`, `gitclient`): mock via interfaces for unit tests;
-  integration tests run real git in `t.TempDir()`.
+- **Pure logic** (`env`, `usecase.PlanSync`, ownership filter, `ui`,
+  `xdg`, `detector`): strict RED-GREEN-REFACTOR. Failing test first.
+- **Repos** (`gitrepo`, `miserepo`): fake Runner scripting for unit
+  tests; the sync Engine is integration-tested with real git in
+  `t.TempDir()` (usecase/sync_test.go).
+- **Flows** (usecase commands): fake repos + fake ports (contract tests).
 - **CLI surface** (cobra wiring): test-after is fine.
-- e2e (mise.run install, gh auth): build tag `//go:build e2e`, CI-only.
+- e2e (mise.run install, gh auth): build tag `//go:build e2e`, run via
+  `make test-e2e`.
 - Coverage: pure packages ≥90%; no enforced global number.
 - Each phase starts with a test list extracted from `docs/DESIGN.md`.
 
 ## Hard rules
 
-- Never let the env repo enter a conflicted git state — semantic 3-way merge
-  in code, abort rebase on conflict, prompt the user (see docs/DESIGN.md).
-- Never push without fetching first; on rejection: fetch → rebase → re-push.
-- Remote merges/conflict resolutions are ALWAYS shown to the user (↻ line).
-- Don't implement scan/adopt, Windows support, or provider abstraction — V1 scope is fixed.
+- Never let the env repo enter a conflicted git state — semantic 3-way
+  merge in Engine, never `git merge`/`git pull` (see docs/DESIGN.md).
+- Never push without fetching first; on divergence: fetch → plan →
+  semantic merge → push (PlanSync decides, Engine executes).
+- Remote merges/conflict resolutions are ALWAYS shown to the user (↻).
+- Only `internal/service` may import `os/exec`.
+- Don't implement scan/adopt, Windows support, or provider abstraction —
+  V1 scope is fixed.
 - mise update policy: explicit only, never auto-update during sync.
