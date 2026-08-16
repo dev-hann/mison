@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -371,11 +372,16 @@ func TestRunSyncRestoresGlobalSymlink(t *testing.T) {
 
 func TestRunInstallWarnsOSSkip(t *testing.T) {
 	app, _, out := newTestApp(t)
+	// pick a restriction that never matches the test platform
+	opposite := "linux"
+	if runtime.GOOS == "linux" {
+		opposite = "macos"
+	}
 
-	if err := app.RunInstall([]string{"docker"}, "macos", PolicyAsk); err != nil {
+	if err := app.RunInstall([]string{"docker"}, opposite, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
-	if !strings.Contains(out.String(), "docker: restricted to macos — skipped on this machine") {
+	if !strings.Contains(out.String(), "docker: restricted to "+opposite+" — skipped on this machine") {
 		t.Errorf("missing OS skip warning:\n%s", out.String())
 	}
 }
