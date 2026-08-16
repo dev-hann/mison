@@ -155,3 +155,37 @@ func TestRunInitGhNotInstalledFlow(t *testing.T) {
 		t.Error("auth login not performed")
 	}
 }
+
+func TestRunInitSecondMachineConnectsExistingRepo(t *testing.T) {
+	repo := &fakeRepo{}
+	app, _, _ := newTestAppWith(t, repo)
+	// remote repo already exists (created by the first machine)
+	app.Gh = &fakeGh{installed: true, authed: true, exists: true, url: "https://github.com/me/mison-environment.git"}
+
+	if err := app.RunInit("mison-environment"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	ghc := app.Gh.(*fakeGh)
+	if len(ghc.created) != 0 {
+		t.Errorf("must not create an existing repo: %v", ghc.created)
+	}
+	if len(repo.connected) != 1 || repo.connected[0] != "https://github.com/me/mison-environment.git" {
+		t.Errorf("Connect calls = %v", repo.connected)
+	}
+}
+
+func TestRunInitExistingEmptyRepoSeedsInitialPush(t *testing.T) {
+	repo := &fakeRepo{remoteEmpty: true}
+	app, _, _ := newTestAppWith(t, repo)
+	app.Gh = &fakeGh{installed: true, authed: true, exists: true, url: "https://github.com/me/mison-environment.git"}
+
+	if err := app.RunInit("mison-environment"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.connected) != 1 {
+		t.Errorf("Connect calls = %v", repo.connected)
+	}
+	if len(repo.pushes) == 0 || repo.pushes[0] != "mison: init environment" {
+		t.Errorf("seed push missing: %v", repo.pushes)
+	}
+}

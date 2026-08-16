@@ -86,10 +86,20 @@ func (c *Client) RepoExists(name string) bool {
 	return err == nil
 }
 
+// RepoURL returns the HTTPS clone URL for an existing repository.
+func (c *Client) RepoURL(name string) (string, error) {
+	out, err := c.run(false, "repo", "view", name, "--json", "url", "--jq", ".url")
+	if err != nil {
+		return "", fmt.Errorf("gh repo view %s: %w", name, err)
+	}
+	url := strings.TrimRight(strings.TrimSpace(out), "/")
+	return url + ".git", nil
+}
+
 // CreatePrivateRepo creates a private repository and returns its HTTPS URL.
 func (c *Client) CreatePrivateRepo(name string) (string, error) {
 	if _, err := c.run(false, "repo", "create", name, "--private"); err != nil {
 		return "", fmt.Errorf("gh repo create %s: %w", name, err)
 	}
-	return "https://github.com/" + strings.TrimPrefix(name, "https://github.com/") + ".git", nil
+	return c.RepoURL(name)
 }

@@ -13,8 +13,10 @@ import (
 type Repo interface {
 	IsRepo() bool
 	Init() error
+	Connect(url string) error
 	RemoteAdd(url string) error
 	RemoteURL() string
+	RemoteIsEmpty() bool
 	SmartPush(message string, resolve gitclient.Resolver) ([]string, error)
 	SmartPull(resolve gitclient.Resolver) ([]string, error)
 }
@@ -26,6 +28,7 @@ type GhClient interface {
 	AuthLogin() error
 	SetupGit() error
 	RepoExists(name string) bool
+	RepoURL(name string) (string, error)
 	CreatePrivateRepo(name string) (string, error)
 }
 

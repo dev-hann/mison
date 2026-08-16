@@ -41,12 +41,14 @@ func (f *fakeMise) InstalledTools() ([]mise.Tool, error) {
 func foundLookPath(string) (string, error) { return "/usr/bin/mise", nil }
 
 type fakeRepo struct {
-	isRepo   bool
-	remote   string
-	pushes   []string
-	pulls    int
-	pushErr  error
-	mergedOn []string
+	isRepo      bool
+	remote      string
+	pushes      []string
+	pulls       int
+	pushErr     error
+	mergedOn    []string
+	connected   []string
+	remoteEmpty bool
 }
 
 func (f *fakeRepo) IsRepo() bool { return f.isRepo }
@@ -67,18 +69,28 @@ func (f *fakeRepo) SmartPull(_ gitclient.Resolver) ([]string, error) {
 	f.pulls++
 	return f.mergedOn, nil
 }
+func (f *fakeRepo) Connect(url string) error {
+	f.connected = append(f.connected, url)
+	f.isRepo = true
+	f.remote = url
+	return nil
+}
+func (f *fakeRepo) RemoteIsEmpty() bool { return f.remoteEmpty }
 
 type fakeGh struct {
 	installed bool
 	authed    bool
 	created   []string
+	exists    bool
+	url       string
 }
 
-func (f *fakeGh) IsInstalled() bool      { return f.installed }
-func (f *fakeGh) AuthStatus() bool       { return f.authed }
-func (f *fakeGh) AuthLogin() error       { f.authed = true; return nil }
-func (f *fakeGh) SetupGit() error        { return nil }
-func (f *fakeGh) RepoExists(string) bool { return false }
+func (f *fakeGh) IsInstalled() bool              { return f.installed }
+func (f *fakeGh) AuthStatus() bool               { return f.authed }
+func (f *fakeGh) AuthLogin() error               { f.authed = true; return nil }
+func (f *fakeGh) SetupGit() error                { return nil }
+func (f *fakeGh) RepoExists(string) bool         { return f.exists }
+func (f *fakeGh) RepoURL(string) (string, error) { return f.url, nil }
 func (f *fakeGh) CreatePrivateRepo(name string) (string, error) {
 	f.created = append(f.created, name)
 	return "https://github.com/me/" + name + ".git", nil

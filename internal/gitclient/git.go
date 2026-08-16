@@ -52,6 +52,39 @@ func (g *Git) Init() error {
 	return nil
 }
 
+// RemoteIsEmpty reports whether origin has no commits (fresh repo).
+func (g *Git) RemoteIsEmpty() bool {
+	_, err := g.rev("origin/main")
+	return err != nil
+}
+
+// Connect links an existing local directory to a remote repo without
+// cloning: init → remote add → fetch → reset to origin/main. Used when
+// the environment directory already holds files (e.g. mise.toml).
+// An empty remote (no commits yet) is left untouched after fetch.
+func (g *Git) Connect(url string) error {
+	if !g.IsRepo() {
+		if err := g.Init(); err != nil {
+			return err
+		}
+	}
+	if g.RemoteURL() == "" {
+		if err := g.RemoteAdd(url); err != nil {
+			return err
+		}
+	}
+	if err := g.fetch(); err != nil {
+		return err
+	}
+	if _, err := g.rev("origin/main"); err != nil {
+		return nil // remote has no commits yet
+	}
+	if _, err := g.run("reset", "--hard", "origin/main"); err != nil {
+		return fmt.Errorf("git reset to origin/main: %w", err)
+	}
+	return nil
+}
+
 // RemoteAdd registers origin.
 func (g *Git) RemoteAdd(url string) error {
 	if _, err := g.run("remote", "add", "origin", url); err != nil {
@@ -93,6 +126,8 @@ func (g *Git) isClean() bool {
 }
 
 // commitAll stages everything and commits. Returns false when clean.
+// Machines without a git identity get a repo-local fallback so mison
+// never blocks on missing global config.
 func (g *Git) commitAll(message string) (bool, error) {
 	if g.isClean() {
 		return false, nil
@@ -100,10 +135,18 @@ func (g *Git) commitAll(message string) (bool, error) {
 	if _, err := g.run("add", "-A"); err != nil {
 		return false, fmt.Errorf("git add: %w", err)
 	}
+	g.ensureIdentity()
 	if _, err := g.run("commit", "-m", message); err != nil {
 		return false, fmt.Errorf("git commit: %w", err)
 	}
 	return true, nil
+}
+
+func (g *Git) ensureIdentity() {
+	if _, err := g.run("config", "user.email"); err != nil {
+		_, _ = g.run("config", "user.email", "mison@local")
+		_, _ = g.run("config", "user.name", "mison")
+	}
 }
 
 // SmartPush commits the worktree and pushes using the DESIGN.md policy:

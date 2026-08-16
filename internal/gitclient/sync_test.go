@@ -298,3 +298,53 @@ func TestIsRepo(t *testing.T) {
 		t.Fatal("IsRepo() = true for plain dir")
 	}
 }
+
+// newCloneBare clones without git identity (simulates a fresh machine
+// with no global git config).
+func newCloneBare(t *testing.T, remote, name string) *Git {
+	t.Helper()
+	parent := t.TempDir()
+	git(t, parent, "clone", remote, name)
+	return New(filepath.Join(parent, name))
+}
+
+func TestConnectFreshDir(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	writeToml(t, a, "[tools]\nnode = \"22\"\n")
+	if _, err := a.SmartPush("install: node", keepLocal); err != nil {
+		t.Fatal(err)
+	}
+
+	// a directory that already holds mise.toml but no git repo
+	dir := filepath.Join(t.TempDir(), "env")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g := New(dir)
+
+	if err := g.Connect(remote); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if !g.IsRepo() {
+		t.Fatal("IsRepo() = false after Connect")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "mise.toml"))
+	if err != nil || !strings.Contains(string(data), `node = "22"`) {
+		t.Fatalf("declaration not checked out: %v %q", err, data)
+	}
+}
+
+func TestSmartPushWithoutGitIdentity(t *testing.T) {
+	remote := newBareRemote(t)
+	g := newCloneBare(t, remote, "b")
+
+	writeToml(t, g, "[tools]\nripgrep = \"latest\"\n")
+	if _, err := g.SmartPush("install: ripgrep", keepLocal); err != nil {
+		t.Fatalf("SmartPush() without identity error = %v", err)
+	}
+	got := readRemoteToml(t, remote)
+	if !strings.Contains(got, "ripgrep") {
+		t.Fatalf("remote missing ripgrep:\n%s", got)
+	}
+}

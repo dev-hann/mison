@@ -75,8 +75,9 @@ func (a *App) ensureGh() error {
 }
 
 // connectRepo links ~/.mison/env to the GitHub environment repo:
-// existing clone → smart pull; otherwise create the private repo,
-// initialize git, and push the initial declaration.
+// local clone → smart pull; remote exists (another machine created it)
+// → connect by fetch+reset; otherwise create the private repo, init
+// git, and push the initial declaration.
 func (a *App) connectRepo(repoName string) error {
 	r := a.ui()
 	envDir := a.layout().EnvDir
@@ -85,6 +86,25 @@ func (a *App) connectRepo(repoName string) error {
 	if repo.IsRepo() && repo.RemoteURL() != "" {
 		r.Step("Connecting environment")
 		_, err := repo.SmartPull(a.makeResolver(PolicyAsk))
+		return err
+	}
+
+	if a.Gh.RepoExists(repoName) {
+		r.Step("Connecting to existing environment repository " + repoName)
+		url, err := a.Gh.RepoURL(repoName)
+		if err != nil {
+			return err
+		}
+		if err := repo.Connect(url); err != nil {
+			return err
+		}
+		if repo.RemoteIsEmpty() {
+			// remote created but never seeded: push the initial state
+			if err := writeReadme(envDir, repoName); err != nil {
+				return err
+			}
+			_, err = repo.SmartPush("mison: init environment", a.makeResolver(PolicyAsk))
+		}
 		return err
 	}
 
