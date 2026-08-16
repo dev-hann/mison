@@ -123,6 +123,31 @@ Principle: hide complexity (git), never hide information (changes).
 | Manual edits | uncommitted mise.toml changes | auto-commit, then diverged path |
 | Partial install | last sync failed mid-way | always re-diff ③, reinstall missing |
 
+## 8. Proposal: mise.lock adoption (design approved → implement next)
+
+Live-researched against mise 2026.8 (`mise lock --global` on a real env):
+
+**Facts observed**
+- `mise lock --global` locks ALL 7 platforms (linux×2, musl×2, macos×2, windows) — cross-machine reproducibility built in.
+- It pins fuzzy selectors to exact resolved versions (node "22" → 22.23.2) with sha256 + URLs.
+- The lockfile lands at `~/.config/mise/mise.lock` — NEXT TO our config symlink, NOT through it. Without mison support it would never be synced.
+
+**Design**
+- Layout: repo holds `mise.lock`; `~/.config/mise/mise.lock` becomes a
+  symlink → repo file (same pattern as config.toml; paths.Ensure gains
+  a second symlink).
+- Merge policy: mise.lock is DERIVED state — never semantic-merged.
+  After any declaration change or merge, mison REGENERATES it
+  (`mise lock --global`) and commits the result. Text conflicts during
+  rebase are resolved by take-any-side + regenerate.
+- Flow hooks: install/uninstall refresh the lock before their auto-push;
+  sync regenerates after applying, then commits+pushes if it changed
+  ("mison: refresh lock").
+- Network: locking hits registries — best-effort with warn-and-defer
+  (same policy as push), never blocks the flow.
+- Schema: mise.lock is mise's own `@generated` format; mison's schema
+  guard does not apply to it (mise owns its compatibility).
+
 ## 7. V1 scope (fixed)
 
 In: macOS/Linux, arm64/x86_64, the 5 commands, mise provider only.
