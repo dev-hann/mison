@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dev-hann/mison/internal/gitclient"
 	"github.com/dev-hann/mison/internal/mise"
 )
 
@@ -39,7 +40,58 @@ func (f *fakeMise) InstalledTools() ([]mise.Tool, error) {
 
 func foundLookPath(string) (string, error) { return "/usr/bin/mise", nil }
 
+type fakeRepo struct {
+	isRepo   bool
+	remote   string
+	pushes   []string
+	pulls    int
+	pushErr  error
+	mergedOn []string
+}
+
+func (f *fakeRepo) IsRepo() bool { return f.isRepo }
+func (f *fakeRepo) Init() error  { f.isRepo = true; return nil }
+func (f *fakeRepo) RemoteAdd(url string) error {
+	f.remote = url
+	return nil
+}
+func (f *fakeRepo) RemoteURL() string { return f.remote }
+func (f *fakeRepo) SmartPush(message string, _ gitclient.Resolver) ([]string, error) {
+	if f.pushErr != nil {
+		return nil, f.pushErr
+	}
+	f.pushes = append(f.pushes, message)
+	return f.mergedOn, nil
+}
+func (f *fakeRepo) SmartPull(_ gitclient.Resolver) ([]string, error) {
+	f.pulls++
+	return f.mergedOn, nil
+}
+
+type fakeGh struct {
+	installed bool
+	authed    bool
+	created   []string
+}
+
+func (f *fakeGh) IsInstalled() bool      { return f.installed }
+func (f *fakeGh) AuthStatus() bool       { return f.authed }
+func (f *fakeGh) AuthLogin() error       { f.authed = true; return nil }
+func (f *fakeGh) SetupGit() error        { return nil }
+func (f *fakeGh) RepoExists(string) bool { return false }
+func (f *fakeGh) CreatePrivateRepo(name string) (string, error) {
+	f.created = append(f.created, name)
+	return "https://github.com/me/" + name + ".git", nil
+}
+
 func newTestApp(t *testing.T) (*App, *fakeMise, *bytes.Buffer) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	return newTestAppWith(t, &fakeRepo{})
+}
+
+func newTestAppWith(t *testing.T, repo *fakeRepo) (*App, *fakeMise, *bytes.Buffer) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
@@ -51,6 +103,8 @@ func newTestApp(t *testing.T) (*App, *fakeMise, *bytes.Buffer) {
 		In:       strings.NewReader(""),
 		Mise:     fm,
 		LookPath: foundLookPath,
+		Git:      func(string) Repo { return repo },
+		Gh:       &fakeGh{installed: true, authed: true},
 	}
 	return app, fm, out
 }
@@ -67,7 +121,7 @@ func readToml(t *testing.T, app *App) string {
 func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 	app, fm, out := newTestApp(t)
 
-	if err := app.RunInstall([]string{"node@22", "go"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node@22", "go"}, "", PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 
@@ -89,7 +143,7 @@ func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 func TestRunInstallWithOSSpec(t *testing.T) {
 	app, _, _ := newTestApp(t)
 
-	if err := app.RunInstall([]string{"docker"}, "linux"); err != nil {
+	if err := app.RunInstall([]string{"docker"}, "linux", PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	toml := readToml(t, app)
@@ -100,7 +154,7 @@ func TestRunInstallWithOSSpec(t *testing.T) {
 
 func TestRunInstallInvalidSpec(t *testing.T) {
 	app, _, _ := newTestApp(t)
-	if err := app.RunInstall([]string{"node@"}, ""); err == nil {
+	if err := app.RunInstall([]string{"node@"}, "", PolicyAsk); err == nil {
 		t.Fatal("RunInstall() expected error for node@")
 	}
 }
@@ -109,7 +163,7 @@ func TestRunInstallInstallsMiseWhenMissing(t *testing.T) {
 	app, fm, out := newTestApp(t)
 	app.LookPath = func(string) (string, error) { return "", errors.New("not found") }
 
-	if err := app.RunInstall([]string{"node"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if !fm.installDone {
@@ -122,7 +176,7 @@ func TestRunInstallInstallsMiseWhenMissing(t *testing.T) {
 
 func TestRunInstallCreatesSymlink(t *testing.T) {
 	app, _, _ := newTestApp(t)
-	if err := app.RunInstall([]string{"node"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	target, err := os.Readlink(filepath.Join(app.Home, ".config", "mise", "config.toml"))
@@ -137,12 +191,12 @@ func TestRunInstallCreatesSymlink(t *testing.T) {
 func TestRunUninstallRemovesDeclarationAndTool(t *testing.T) {
 	app, fm, _ := newTestApp(t)
 	app.In = strings.NewReader("y\n")
-	if err := app.RunInstall([]string{"node", "go"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node", "go"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.installed = []mise.Tool{{Name: "node", Version: "22.11.0"}, {Name: "go", Version: "1.25.1"}}
 
-	if err := app.RunUninstall([]string{"node"}, false); err != nil {
+	if err := app.RunUninstall([]string{"node"}, false, PolicyAsk); err != nil {
 		t.Fatalf("RunUninstall() error = %v", err)
 	}
 
@@ -162,11 +216,11 @@ func TestRunUninstallRemovesDeclarationAndTool(t *testing.T) {
 func TestRunUninstallAbortsWhenDeclined(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	app.In = strings.NewReader("n\n")
-	if err := app.RunInstall([]string{"node"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := app.RunUninstall([]string{"node"}, false); err != nil {
+	if err := app.RunUninstall([]string{"node"}, false, PolicyAsk); err != nil {
 		t.Fatalf("RunUninstall() error = %v", err)
 	}
 	toml := readToml(t, app)
@@ -178,17 +232,17 @@ func TestRunUninstallAbortsWhenDeclined(t *testing.T) {
 func TestRunUninstallUnknownTool(t *testing.T) {
 	app, _, _ := newTestApp(t)
 	app.In = strings.NewReader("y\n")
-	if err := app.RunInstall([]string{"node"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.RunUninstall([]string{"python"}, false); err == nil {
+	if err := app.RunUninstall([]string{"python"}, false, PolicyAsk); err == nil {
 		t.Fatal("RunUninstall() expected error for unknown tool")
 	}
 }
 
 func TestRunStatusRendersStates(t *testing.T) {
 	app, _, out := newTestApp(t)
-	if err := app.RunInstall([]string{"node@22", "go@1.25", "python@3.13"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node@22", "go@1.25", "python@3.13"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	app.Mise.(*fakeMise).installed = []mise.Tool{
@@ -214,12 +268,12 @@ func TestRunStatusRendersStates(t *testing.T) {
 
 func TestRunSyncAppliesMissing(t *testing.T) {
 	app, fm, out := newTestApp(t)
-	if err := app.RunInstall([]string{"node@22"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.execCalls = nil
 
-	if err := app.RunSync(false); err != nil {
+	if err := app.RunSync(false, PolicyAsk); err != nil {
 		t.Fatalf("RunSync() error = %v", err)
 	}
 	joined := strings.Join(fm.execCalls, ";")
@@ -233,13 +287,13 @@ func TestRunSyncAppliesMissing(t *testing.T) {
 
 func TestRunSyncNoopWhenAligned(t *testing.T) {
 	app, fm, out := newTestApp(t)
-	if err := app.RunInstall([]string{"node@22"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.installed = []mise.Tool{{Name: "node", Version: "22.11.0"}}
 	fm.execCalls = nil
 
-	if err := app.RunSync(false); err != nil {
+	if err := app.RunSync(false, PolicyAsk); err != nil {
 		t.Fatalf("RunSync() error = %v", err)
 	}
 	if len(fm.execCalls) != 0 {
@@ -252,7 +306,7 @@ func TestRunSyncNoopWhenAligned(t *testing.T) {
 
 func TestRunSyncPruneRemovesOrphans(t *testing.T) {
 	app, fm, _ := newTestApp(t)
-	if err := app.RunInstall([]string{"node@22"}, ""); err != nil {
+	if err := app.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.installed = []mise.Tool{
@@ -261,7 +315,7 @@ func TestRunSyncPruneRemovesOrphans(t *testing.T) {
 	}
 	fm.execCalls = nil
 
-	if err := app.RunSync(true); err != nil {
+	if err := app.RunSync(true, PolicyAsk); err != nil {
 		t.Fatalf("RunSync(prune) error = %v", err)
 	}
 	joined := strings.Join(fm.execCalls, ";")
@@ -272,8 +326,27 @@ func TestRunSyncPruneRemovesOrphans(t *testing.T) {
 
 func TestRunSyncWithoutEnvironment(t *testing.T) {
 	app, _, _ := newTestApp(t)
-	err := app.RunSync(false)
+	err := app.RunSync(false, PolicyAsk)
 	if err == nil || !strings.Contains(err.Error(), "mison init") {
 		t.Fatalf("RunSync() error = %v, want init hint", err)
+	}
+}
+
+func TestRunSyncRestoresGlobalSymlink(t *testing.T) {
+	app, fm, _ := newTestApp(t)
+	if err := app.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+		t.Fatal(err)
+	}
+	// simulate a machine that got the env dir by cloning: symlink removed
+	if err := os.Remove(filepath.Join(app.Home, ".config", "mise", "config.toml")); err != nil {
+		t.Fatal(err)
+	}
+	fm.execCalls = nil
+
+	if err := app.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if target, err := os.Readlink(filepath.Join(app.Home, ".config", "mise", "config.toml")); err != nil || target == "" {
+		t.Fatalf("global symlink not restored by sync: %v", err)
 	}
 }

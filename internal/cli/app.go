@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -18,18 +19,56 @@ import (
 // App carries the dependencies every command handler needs.
 // All fields are injected; tests provide fakes.
 type App struct {
-	Home     string
-	Stdout   io.Writer
-	In       io.Reader
-	Mise     mise.Manager
-	LookPath detector.LookPathFunc
+	Home      string
+	Stdout    io.Writer
+	In        io.Reader
+	Mise      mise.Manager
+	LookPath  detector.LookPathFunc
+	Git       func(dir string) Repo
+	Gh        GhClient
+	bufReader *bufio.Reader
 }
 
 func (a *App) ui() *ui.Renderer     { return ui.New(a.Stdout) }
 func (a *App) layout() paths.Layout { return paths.New(a.Home) }
+func (a *App) detect() detector.Info {
+	return detector.Detect()
+}
+
+// reader lazily wraps In in a single buffered reader so consecutive
+// prompts never lose buffered input.
+func (a *App) reader() *bufio.Reader {
+	if a.bufReader == nil {
+		a.bufReader = bufio.NewReader(a.In)
+	}
+	return a.bufReader
+}
+
+func (a *App) readLine() string {
+	line, err := a.reader().ReadString('\n')
+	if err != nil && line == "" {
+		return ""
+	}
+	return line
+}
+
+// confirm asks a yes/no question.
+func (a *App) confirm(question string) bool {
+	_, _ = fmt.Fprintf(a.Stdout, "%s %s [y/N] ", ui.MarkWarning, question)
+	switch strings.ToLower(strings.TrimSpace(a.readLine())) {
+	case "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func envTool(name, version string) env.Tool {
+	return env.Tool{Name: name, Version: version}
+}
 
 // RunInstall implements `mison install <tools...> [--os-spec]`.
-func (a *App) RunInstall(args []string, osFlag string) error {
+func (a *App) RunInstall(args []string, osFlag string, policy ConflictPolicy) error {
 	osSpec := env.ParseOSSpec(osFlag)
 	if osFlag != "" && osSpec == nil {
 		return fmt.Errorf("invalid OS spec %q (use mac, linux, linux/x64, linux/arm64, macos/arm64)", osFlag)
@@ -64,15 +103,14 @@ func (a *App) RunInstall(args []string, osFlag string) error {
 	if err := a.Mise.Exec("install"); err != nil {
 		return err
 	}
+	a.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
 	return nil
 }
 
 // RunUninstall implements `mison uninstall <tools...> [--yes]`.
-func (a *App) RunUninstall(args []string, assumeYes bool) error {
-	if !assumeYes {
-		if !ui.Prompt(a.In, a.Stdout, fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
-			return nil
-		}
+func (a *App) RunUninstall(args []string, assumeYes bool, policy ConflictPolicy) error {
+	if !assumeYes && !a.confirm(fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
+		return nil
 	}
 
 	if _, err := a.layout().Ensure(); err != nil {
@@ -117,6 +155,7 @@ func (a *App) RunUninstall(args []string, assumeYes bool) error {
 			a.ui().Step(fmt.Sprintf("Removed %s (not installed)", name))
 		}
 	}
+	a.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
 	return nil
 }
 
@@ -158,13 +197,29 @@ func (a *App) RunStatus() error {
 	return nil
 }
 
-// RunSync implements the local part of `mison sync` (M1).
-func (a *App) RunSync(prune bool) error {
+// RunSync implements `mison sync`: pull declaration (when the env repo
+// is connected), apply it via mise, prune orphans on request.
+func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 	if _, err := os.Stat(a.layout().MiseToml); err != nil {
 		return fmt.Errorf("no environment found — run mison init first")
 	}
+	// restore the global-config symlink: machines that received the env
+	// by cloning (or lost the symlink) must still be seen by mise
+	if _, err := a.layout().Ensure(); err != nil {
+		return err
+	}
 	if err := a.ensureMise(); err != nil {
 		return err
+	}
+
+	if repo := a.Git(a.layout().EnvDir); repo.IsRepo() {
+		a.ui().Step("Pulling environment")
+		merged, err := repo.SmartPull(a.makeResolver(policy))
+		if err != nil {
+			a.ui().Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
+		} else if len(merged) > 0 {
+			a.ui().Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
+		}
 	}
 
 	cfg, err := a.loadConfig()
@@ -216,7 +271,7 @@ func (a *App) RunSync(prune bool) error {
 			}
 		}
 	default:
-		if ui.Prompt(a.In, a.Stdout, fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
+		if a.confirm(fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
 			for _, name := range orphans {
 				r.Step(fmt.Sprintf("Pruning %s", name))
 				if err := a.Mise.Exec("uninstall", "--all", name); err != nil {
