@@ -28,6 +28,12 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+release:
+  draft: false
+  prerelease: auto
+  extra_files:
+    - glob: scripts/install.sh
+
 changelog:
   sort: asc
   filters:
@@ -35,7 +41,3 @@ changelog:
       - "^test:"
       - "^chore:"
       - Merge pull request
-
-release:
-  draft: false
-  prerelease: auto

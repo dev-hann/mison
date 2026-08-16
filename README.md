@@ -39,18 +39,22 @@ it at any time.
 Requirements: `git`, `curl`. Everything else (mise, gh, tools) is
 bootstrapped automatically.
 
-Download a binary from the [releases page](https://github.com/dev-hann/mison/releases)
-(linux/darwin · amd64/arm64):
-
 ```bash
-tar xzf mison_linux_amd64.tar.gz && mv mison ~/.local/bin/
+curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
 ```
 
-Or build from source:
+Or pin a version:
 
 ```bash
-git clone https://github.com/dev-hann/mison
-cd mison && go build -o ~/.local/bin/mison ./cmd/mison
+MISON_VERSION=v0.2.1 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
+```
+
+The installer detects your OS/architecture, downloads the release
+binary, and verifies its checksum. Prefer reviewing first?
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh -o install.sh
+less install.sh && sh install.sh
 ```
 
 ## Usage
