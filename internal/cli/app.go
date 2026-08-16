@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/dev-hann/mison/internal/detector"
 	"github.com/dev-hann/mison/internal/env"
@@ -16,7 +15,9 @@ import (
 )
 
 // App carries the dependencies every command handler needs.
-// All fields are injected; tests provide fakes.
+// All fields are injected; tests provide fakes. Business flows reach
+// the user exclusively through the two interaction ports: UI (one-way
+// notifications) and Ask (blocking confirmations).
 type App struct {
 	Home      string
 	Stdout    io.Writer
@@ -25,6 +26,8 @@ type App struct {
 	LookPath  detector.LookPathFunc
 	Git       func(dir string) Repo
 	Gh        GhClient
+	UI        Reporter
+	Ask       Prompter
 	bufReader *bufio.Reader
 }
 
@@ -51,17 +54,6 @@ func (a *App) readLine() string {
 	return line
 }
 
-// confirm asks a yes/no question.
-func (a *App) confirm(question string) bool {
-	_, _ = fmt.Fprintf(a.Stdout, "%s %s [y/N] ", ui.MarkWarning, question)
-	switch strings.ToLower(strings.TrimSpace(a.readLine())) {
-	case "y", "yes":
-		return true
-	default:
-		return false
-	}
-}
-
 func envTool(name, version string) env.Tool {
 	return env.Tool{Name: name, Version: version}
 }
@@ -70,7 +62,7 @@ func (a *App) ensureMise() error {
 	if detector.IsMiseInstalled(a.LookPath) {
 		return nil
 	}
-	a.ui().Step("Installing mise")
+	a.UI.Step("Installing mise")
 	return a.Mise.Install()
 }
 

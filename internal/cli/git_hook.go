@@ -6,7 +6,6 @@ import (
 
 	"github.com/dev-hann/mison/internal/env"
 	"github.com/dev-hann/mison/internal/gitclient"
-	"github.com/dev-hann/mison/internal/ui"
 )
 
 // Repo is the git surface cli depends on (satisfied by *gitclient.Git).
@@ -54,7 +53,7 @@ func (a *App) makeResolver(policy ConflictPolicy) gitclient.Resolver {
 			case PolicyTheirs:
 				out = append(out, pickSide(c.Remote, c.Local))
 			default:
-				tool, err := a.promptConflict(c)
+				tool, err := a.Ask.ResolveConflict(c)
 				if err != nil {
 					return nil, err
 				}
@@ -74,31 +73,6 @@ func pickSide(primary, fallback env.Tool) env.Tool {
 	return primary
 }
 
-func (a *App) promptConflict(c env.Conflict) (env.Tool, error) {
-	r := ui.New(a.Stdout)
-	localDesc := "removed"
-	if c.Local.Name != "" {
-		localDesc = c.Local.Version
-	}
-	remoteDesc := "removed"
-	if c.Remote.Name != "" {
-		remoteDesc = c.Remote.Version
-	}
-	r.Fail(fmt.Sprintf("Conflict on %s (this machine: %s, remote: %s)", c.Name, localDesc, remoteDesc))
-	r.Line("  [1] keep this machine  [2] accept remote")
-	_, _ = fmt.Fprint(a.Stdout, "Choose [1/2]: ")
-
-	choice := a.readLine()
-	switch strings.TrimSpace(choice) {
-	case "1":
-		return pickSide(c.Local, c.Remote), nil
-	case "2":
-		return pickSide(c.Remote, c.Local), nil
-	default:
-		return env.Tool{}, fmt.Errorf("conflict on %s unresolved — aborting (local changes kept unpushed)", c.Name)
-	}
-}
-
 // commitAndPush applies the DESIGN.md push policy after a declaration
 // change: no repo → skip silently; divergence → reconcile; offline →
 // warn and defer to the next sync.
@@ -109,10 +83,10 @@ func (a *App) commitAndPush(message string, policy ConflictPolicy) {
 	}
 	merged, err := repo.SmartPush(message, a.makeResolver(policy))
 	if err != nil {
-		a.ui().Warn("could not push — will retry on next sync (" + err.Error() + ")")
+		a.UI.Warn("could not push — will retry on next sync (" + err.Error() + ")")
 		return
 	}
 	if len(merged) > 0 {
-		a.ui().Synced(fmt.Sprintf("Remote had new changes (%s) — merged automatically", strings.Join(merged, ", ")))
+		a.UI.Synced(fmt.Sprintf("Remote had new changes (%s) — merged automatically", strings.Join(merged, ", ")))
 	}
 }

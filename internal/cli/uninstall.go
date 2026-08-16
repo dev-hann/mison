@@ -7,7 +7,7 @@ import (
 
 // RunUninstall implements `mison uninstall <tools...> [--yes]`.
 func (a *App) RunUninstall(args []string, assumeYes bool, policy ConflictPolicy) error {
-	if !assumeYes && !a.confirm(fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
+	if !assumeYes && !a.Ask.Confirm(fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
 		return nil
 	}
 
@@ -45,12 +45,12 @@ func (a *App) RunUninstall(args []string, assumeYes bool, policy ConflictPolicy)
 
 	for _, name := range args {
 		if installed[name] {
-			a.ui().Step(fmt.Sprintf("Removing %s", name))
+			a.UI.Step(fmt.Sprintf("Removing %s", name))
 			if err := a.Mise.Exec("uninstall", "--all", name); err != nil {
 				return err
 			}
 		} else {
-			a.ui().Step(fmt.Sprintf("Removed %s (not installed)", name))
+			a.UI.Step(fmt.Sprintf("Removed %s (not installed)", name))
 		}
 	}
 	a.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)

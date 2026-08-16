@@ -21,7 +21,7 @@ func (a *App) RunStatus() error {
 	declared := cfg.Tools()
 	diff := env.Diff(declared, toEnvTools(installed))
 
-	r := a.ui()
+	r := a.UI
 	r.Line("Environment status")
 	a.renderSyncStatus()
 	var missing int

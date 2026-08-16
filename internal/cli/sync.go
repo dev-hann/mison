@@ -27,12 +27,12 @@ func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 	}
 
 	if repo := a.Git(a.layout().EnvDir); repo.IsRepo() {
-		a.ui().Step("Pulling environment")
+		a.UI.Step("Pulling environment")
 		merged, err := repo.SmartPull(a.makeResolver(policy))
 		if err != nil {
-			a.ui().Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
+			a.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
 		} else if len(merged) > 0 {
-			a.ui().Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
+			a.UI.Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
 		}
 	}
 
@@ -55,7 +55,7 @@ func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 		}
 	}
 	if needsApply {
-		a.ui().Step("Installing declared tools")
+		a.UI.Step("Installing declared tools")
 		if err := a.Mise.Exec("install"); err != nil {
 			return err
 		}
@@ -74,7 +74,7 @@ func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 	}
 	sort.Strings(orphans)
 
-	r := a.ui()
+	r := a.UI
 	switch {
 	case len(orphans) == 0:
 		// nothing extra
@@ -86,7 +86,7 @@ func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 			}
 		}
 	default:
-		if a.confirm(fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
+		if a.Ask.Confirm(fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
 			for _, name := range orphans {
 				r.Step(fmt.Sprintf("Pruning %s", name))
 				if err := a.Mise.Exec("uninstall", "--all", name); err != nil {
@@ -108,7 +108,7 @@ func (a *App) RunSync(prune bool, policy ConflictPolicy) error {
 
 // renderSyncStatus prints the local-vs-GitHub declaration relation.
 func (a *App) renderSyncStatus() {
-	r := a.ui()
+	r := a.UI
 	repo := a.Git(a.layout().EnvDir)
 	if !repo.IsRepo() {
 		r.Line("Sync: not connected — run mison init to link GitHub")

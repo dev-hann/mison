@@ -47,12 +47,12 @@ func (a *App) RunInstall(args []string, osFlag string, policy ConflictPolicy) er
 	for _, t := range tools {
 		if len(t.OS) > 0 && !t.AppliesTo(info.OS, info.Arch) {
 			skipped[t.Name] = true
-			a.ui().Warn(fmt.Sprintf("%s: restricted to %s — skipped on this machine (%s/%s)",
+			a.UI.Warn(fmt.Sprintf("%s: restricted to %s — skipped on this machine (%s/%s)",
 				t.Name, strings.Join(t.OS, ", "), info.OS, info.Arch))
 		}
 	}
 
-	a.ui().Step(fmt.Sprintf("Installing %s", strings.Join(names, ", ")))
+	a.UI.Step(fmt.Sprintf("Installing %s", strings.Join(names, ", ")))
 	if err := a.Mise.Exec("install"); err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (a *App) verifyVisible(names []string, ignore map[string]bool) {
 		if ignore[name] || present[name] {
 			continue
 		}
-		a.ui().Warn(fmt.Sprintf("%s not visible to mise — declaration saved; run mison status to check", name))
+		a.UI.Warn(fmt.Sprintf("%s not visible to mise — declaration saved; run mison status to check", name))
 	}
 }
 
@@ -97,7 +97,7 @@ func (a *App) verifyDeclaredApplied(declared []env.Tool) {
 			continue
 		}
 		if !present[d.Name] {
-			a.ui().Warn(fmt.Sprintf("%s not visible to mise — run mison status to check", d.Name))
+			a.UI.Warn(fmt.Sprintf("%s not visible to mise — run mison status to check", d.Name))
 		}
 	}
 }

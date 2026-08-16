@@ -9,7 +9,7 @@ import (
 // RunInit implements `mison init`: bootstrap the machine into a mison
 // environment (mise → gh → private env repo → declaration symlink).
 func (a *App) RunInit(repoName string) error {
-	r := a.ui()
+	r := a.UI
 	info := a.detect()
 	r.Step(fmt.Sprintf("Detected %s/%s", info.OS, info.Arch))
 
@@ -40,7 +40,7 @@ func (a *App) RunInit(repoName string) error {
 // gh is part of the environment so every machine bootstraps itself),
 // then authenticates and wires git credentials.
 func (a *App) ensureGh() error {
-	r := a.ui()
+	r := a.UI
 	if !a.Gh.IsInstalled() {
 		r.Step("Installing gh")
 		if err := a.Mise.Exec("install", "gh@latest"); err != nil {
@@ -66,7 +66,7 @@ func (a *App) ensureGh() error {
 	}
 
 	if !a.Gh.AuthStatus() {
-		a.ui().Line("GitHub login required — follow the browser prompt:")
+		a.UI.Line("GitHub login required — follow the browser prompt:")
 		if err := a.Gh.AuthLogin(); err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func (a *App) ensureGh() error {
 // → connect by fetch+reset; otherwise create the private repo, init
 // git, and push the initial declaration.
 func (a *App) connectRepo(repoName string) error {
-	r := a.ui()
+	r := a.UI
 	envDir := a.layout().EnvDir
 	repo := a.Git(envDir)
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dev-hann/mison/internal/env"
 	"github.com/dev-hann/mison/internal/gitclient"
 	"github.com/dev-hann/mison/internal/mise"
 )
@@ -53,6 +54,7 @@ type fakeRepo struct {
 	syncState   gitclient.SyncState
 	remoteAdded []string
 	syncErr     error
+	conflict    *env.Conflict
 }
 
 func (f *fakeRepo) IsRepo() bool { return f.isRepo }
@@ -62,9 +64,14 @@ func (f *fakeRepo) RemoteAdd(url string) error {
 	return nil
 }
 func (f *fakeRepo) RemoteURL() string { return f.remote }
-func (f *fakeRepo) SmartPush(message string, _ gitclient.Resolver) ([]string, error) {
+func (f *fakeRepo) SmartPush(message string, resolve gitclient.Resolver) ([]string, error) {
 	if f.pushErr != nil {
 		return nil, f.pushErr
+	}
+	if f.conflict != nil && resolve != nil {
+		if _, err := resolve([]env.Conflict{*f.conflict}); err != nil {
+			return nil, err
+		}
 	}
 	f.pushes = append(f.pushes, message)
 	return f.mergedOn, nil
@@ -125,6 +132,9 @@ func newTestAppWith(t *testing.T, repo *fakeRepo) (*App, *fakeMise, *bytes.Buffe
 		Git:      func(string) Repo { return repo },
 		Gh:       &fakeGh{installed: true, authed: true},
 	}
+	term := NewTermUI(app)
+	app.UI = term
+	app.Ask = term
 	return app, fm, out
 }
 

@@ -123,6 +123,9 @@ func Execute(version string) error {
 		Git:      func(dir string) Repo { return gitclient.New(dir) },
 		Gh:       gh.New(),
 	}
+	term := NewTermUI(app)
+	app.UI = term
+	app.Ask = term
 	return NewRootCmd(app, version).Execute()
 }
 

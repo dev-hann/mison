@@ -41,13 +41,34 @@ internal/e2e/       real-world tests, build tag `e2e`
 internal/cli/
 ├── app.go         App struct + shared helpers only (ui/layout/config IO)
 ├── root.go        cobra wiring only
+├── interact.go    interaction ports: Reporter (notify) + Prompter (confirm)
 ├── <command>.go   one command handler per file (install, uninstall,
 │                  sync, status, init) plus its private helpers
-└── git_hook.go    shared push policy (commitAndPush, conflict prompts)
+└── git_hook.go    shared push policy (commitAndPush, conflict resolver)
 ```
 
 Rules: App struct fields live only in app.go; a new command gets its
 own file; cross-command helpers go in app.go or git_hook.go.
+
+### Interaction ports (business flows never touch io)
+
+Flows reach the user exclusively through two ports on App:
+
+- `UI Reporter` — one-way notifications (`Step/Synced/Warn/Fail/Line/ToolLine`)
+- `Ask Prompter` — blocking confirmations (`Confirm`, `ResolveConflict`)
+
+```
+✅ Do    a.UI.Step("Installing node")      // notify
+✅ Do    if !a.Ask.Confirm("Remove?") ...  // gate a destructive step
+❌ Do not fmt.Fprint / fmt.Fprintf in command handlers
+❌ Do not read os.Stdin in flows — answers come only from Ask
+```
+
+Rationale: showing and asking are different concerns; the split makes
+the "what is confirmed vs merely shown" policy explicit as types.
+Tests inject fakeReport/fakeAsk and assert which port calls a flow
+made, not rendered strings. Exception: gh device-flow login passes the
+process stdio through (child-process UI, not ours).
 
 Dependency direction: cli → {detector, mise, env, gitclient, ui}.
 Pure packages (`env`, `detector`, `ui`) must not import exec/os machinery.
