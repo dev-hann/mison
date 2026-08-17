@@ -2,7 +2,8 @@
 
 This document is the source of truth for runtime behavior. It is read-only
 after approval: changes require a new decision entry. See PROJECT.md for the
-original product brief.
+original product brief. Command-by-command flows, edge cases, and their
+guarding tests are mapped in BEHAVIOR.md.
 
 ## 1. Model
 

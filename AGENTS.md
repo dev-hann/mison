@@ -6,6 +6,8 @@ a GitHub repo holding `mise.toml` is the source of truth. Mison orchestrates.
 **Read before touching**: `docs/DESIGN.md` (behavior specs) and
 `docs/ARCHITECTURE.md` (layer rules). When modifying sync/merge policy
 or command flows, you MUST read `docs/DESIGN.md` first.
+`docs/BEHAVIOR.md` maps every command flow, edge case, and the test
+that guards it — update it in the same commit when behavior changes.
 
 ## Commands
 
