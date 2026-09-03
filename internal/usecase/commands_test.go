@@ -26,7 +26,12 @@ type fakeMise struct {
 	execFailArg string
 	// lockResult: when set, Exec("lock", "--global") writes it to the
 	// env-dir lockfile — simulates mise's side effect through the symlink.
-	lockResult string
+	// lockResults (when set) supplies DIFFERENT content per successive
+	// lock call (last entry repeats) — simulates a merge clobbering the
+	// lock between regenerations.
+	lockResult  string
+	lockResults []string
+	lockCalls   int
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -52,9 +57,20 @@ func (f *fakeMise) Exec(args ...string) error {
 	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
 		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
 	}
-	if joined == "lock --global" && f.lockResult != "" {
-		if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(f.lockResult), 0o644); err != nil {
-			return err
+	if joined == "lock --global" {
+		content := f.lockResult
+		if len(f.lockResults) > 0 {
+			i := f.lockCalls
+			if i >= len(f.lockResults) {
+				i = len(f.lockResults) - 1
+			}
+			content = f.lockResults[i]
+		}
+		f.lockCalls++
+		if content != "" {
+			if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(content), 0o644); err != nil {
+				return err
+			}
 		}
 	}
 	f.execCalls = append(f.execCalls, joined)
@@ -1067,5 +1083,40 @@ func TestSyncNeverPrunesGh(t *testing.T) {
 		if strings.Contains(c, "gh") {
 			t.Fatalf("gh must not be pruned, execCalls: %v", fm.execCalls)
 		}
+	}
+}
+
+func TestPushRegeneratesLockAfterRemoteMerge(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, mergedOn: []string{"node"}}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	// first regen (pre-push) writes v1; the merge resets the worktree to
+	// the remote's lock; the second regen writes v2 — content differs,
+	// so the refresh must be pushed
+	fm.lockResults = []string{"# lock v1", "# lock v2"}
+
+	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	wantPushes := []string{"install: go", "mison: refresh lock"}
+	if len(repo.pushes) != len(wantPushes) {
+		t.Fatalf("pushes = %v, want %v", repo.pushes, wantPushes)
+	}
+	for i := range wantPushes {
+		if repo.pushes[i] != wantPushes[i] {
+			t.Fatalf("pushes = %v, want %v", repo.pushes, wantPushes)
+		}
+	}
+}
+
+func TestPushWithoutMergeSkipsLockRepush(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	fm.lockResult = "# lock v1\n"
+
+	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if len(repo.pushes) != 1 || repo.pushes[0] != "install: go" {
+		t.Fatalf("pushes = %v, want only [install: go]", repo.pushes)
 	}
 }

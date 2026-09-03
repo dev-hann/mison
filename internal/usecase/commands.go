@@ -202,6 +202,15 @@ func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 	}
 	if len(merged) > 0 {
 		f.UI.Synced(fmt.Sprintf("Remote had new changes (%s) — merged automatically", strings.Join(merged, ", ")))
+		// the merge path hard-resets to the remote, clobbering the lock
+		// regenerated above — regenerate once more and push when the
+		// content differs (bounded: one extra round, no recursion)
+		if f.refreshLock() {
+			if _, err := repo.SmartPush("mison: refresh lock", f.makeResolver(policy)); err != nil {
+				f.UI.Warn("could not push lockfile — will retry on next sync (" + err.Error() + ")")
+			}
+		}
+		return nil
 	}
 	return nil
 }

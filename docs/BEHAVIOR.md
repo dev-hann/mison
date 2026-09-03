@@ -72,6 +72,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | push fails (offline) | warn-and-defer to next sync, command succeeds | TestInstallDeferredPushOnFailure |
 | future-schema remote at push | fatal: Fail port, non-zero exit (no defer) | TestInstallFutureSchemaPushIsFatal |
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
+| merge during install/uninstall push | merge reset clobbers the lock → regenerated + pushed when changed | TestPushRegeneratesLockAfterRemoteMerge |
 | existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
 | multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
 | lockfile refresh after apply | `mise lock --global` before push — same commit; failure warns + defers | TestInstallRefreshesLockBeforePush, TestInstallLockFailureWarnsAndDefers |
