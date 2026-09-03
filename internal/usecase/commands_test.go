@@ -1046,3 +1046,26 @@ func TestRunInitRefreshesLock(t *testing.T) {
 		t.Fatalf("changed lock must be pushed after init install, pushes: %v", repo.pushes)
 	}
 }
+
+func TestSyncNeverPrunesGh(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	ask := &fakeAsk{confirm: true}
+	f.Ask = ask
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// gh installed via the bootstrap chain but not declared
+	fm.setInstalled("gh", "2.62.0")
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if len(ask.confirmQs) != 0 {
+		t.Fatalf("gh must never be offered as an orphan: %v", ask.confirmQs)
+	}
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "gh") {
+			t.Fatalf("gh must not be pruned, execCalls: %v", fm.execCalls)
+		}
+	}
+}

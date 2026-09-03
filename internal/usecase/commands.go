@@ -484,6 +484,12 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	}
 	var orphans []string
 	for _, t := range installed {
+		if t.Name == "gh" {
+			// gh is mison's bootstrap tool (auth + push) — never offer
+			// it for orphan removal; explicit `mison uninstall gh` stays
+			// available for users who really mean it
+			continue
+		}
 		if !declaredNames[t.Name] {
 			orphans = append(orphans, t.Name)
 		}

@@ -135,6 +135,7 @@ PlanSync four-way:
 | pull network failure | warn, continue with local declaration | RunSync warn-and-continue (observed in live e2e) |
 | future-schema remote at pull | fatal: hard error, sync aborted | TestSyncFutureSchemaPullIsFatal |
 | orphans present | prompt → remove on approval / --prune unattended | TestRunSyncPruneRemovesOrphans |
+| gh undeclared but installed | never offered as orphan (bootstrap protection) | TestSyncNeverPrunesGh |
 | prune failure mid-list | remaining orphans still attempted; partial failure reported | TestSyncPruneContinuesPastFailures |
 | orphan removal declined | "kept" notice + --prune hint | (symmetric path of the prune test) |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
