@@ -1027,3 +1027,22 @@ func TestSyncSkipsLockPushWhenUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestRunInitRefreshesLock(t *testing.T) {
+	repo := &fakeRepo{}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	fm.lockResult = "# lock v1\n"
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	found := false
+	for _, p := range repo.pushes {
+		if p == "mison: refresh lock" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("changed lock must be pushed after init install, pushes: %v", repo.pushes)
+	}
+}

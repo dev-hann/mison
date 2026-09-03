@@ -566,6 +566,12 @@ func (f *Flows) RunInit(repoName string) error {
 	if err := f.Mise.Exec("install"); err != nil {
 		return err
 	}
+	if f.refreshLock() {
+		r.Step("Refreshing lockfile")
+		if err := f.commitAndPush("mison: refresh lock", PolicyAsk); err != nil {
+			return err
+		}
+	}
 	r.Step("Environment ready")
 	return nil
 }
