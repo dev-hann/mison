@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -168,20 +169,26 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 
 // commitAndPush applies the push policy after a declaration change:
 // no repo → skip silently; divergence → reconcile; offline → warn and
-// defer to the next sync.
-func (f *Flows) commitAndPush(message string, policy ConflictPolicy) {
+// defer to the next sync. Future-schema remotes are fatal — the local
+// declaration was saved, but nothing may be reset or pushed.
+func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 	repo := f.envRepo()
 	if !repo.IsRepo() {
-		return
+		return nil
 	}
 	merged, err := repo.SmartPush(message, f.makeResolver(policy))
 	if err != nil {
+		if errors.Is(err, env.ErrFutureSchema) {
+			f.UI.Fail("declaration saved locally — push refused: " + err.Error())
+			return err
+		}
 		f.UI.Warn("could not push — will retry on next sync (" + err.Error() + ")")
-		return
+		return nil
 	}
 	if len(merged) > 0 {
 		f.UI.Synced(fmt.Sprintf("Remote had new changes (%s) — merged automatically", strings.Join(merged, ", ")))
 	}
+	return nil
 }
 
 func tool(name, version string) env.Tool {
@@ -239,8 +246,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 		return err
 	}
 	f.verifyVisible(names, skipped)
-	f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
-	return nil
+	return f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
 }
 
 // verifyVisible warns when tools mison just installed are not reported
@@ -332,8 +338,7 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 			f.UI.Step(fmt.Sprintf("Removed %s (not installed)", name))
 		}
 	}
-	f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
-	return nil
+	return f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
 }
 
 // RunStatus implements the status flow (read-only).
@@ -418,9 +423,12 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	if repo := f.envRepo(); repo.IsRepo() {
 		f.UI.Step("Pulling environment")
 		merged, err := repo.SmartPull(f.makeResolver(policy))
-		if err != nil {
+		switch {
+		case errors.Is(err, env.ErrFutureSchema):
+			return err
+		case err != nil:
 			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
-		} else if len(merged) > 0 {
+		case len(merged) > 0:
 			f.UI.Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
 		}
 	}

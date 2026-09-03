@@ -3,6 +3,7 @@ package usecase
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -57,6 +58,7 @@ type fakeRepo struct {
 	pushes      []string
 	pulls       int
 	pushErr     error
+	pullErr     error
 	mergedOn    []string
 	connected   []string
 	remoteEmpty bool
@@ -86,6 +88,9 @@ func (f *fakeRepo) SmartPush(message string, resolve Resolver) ([]string, error)
 	return f.mergedOn, nil
 }
 func (f *fakeRepo) SmartPull(_ Resolver) ([]string, error) {
+	if f.pullErr != nil {
+		return nil, f.pullErr
+	}
 	f.pulls++
 	return f.mergedOn, nil
 }
@@ -784,5 +789,35 @@ func TestRunInitDoesNotWriteReadme(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.Home, ".mison", "env", "README.md")); !os.IsNotExist(err) {
 		t.Errorf("README.md must not be created: %v", err)
+	}
+}
+
+func TestInstallFutureSchemaPushIsFatal(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: fmt.Errorf("parse origin/main:mise.toml: %w", env.ErrFutureSchema)}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	err := f.RunInstall([]string{"node"}, "", PolicyAsk)
+	if err == nil {
+		t.Fatal("RunInstall must propagate future-schema push failure")
+	}
+	if !strings.Contains(out.String(), "✗") {
+		t.Fatal("must report via Fail port (✗)")
+	}
+	if strings.Contains(out.String(), "will retry on next sync") {
+		t.Fatal("future-schema must not be deferred to next sync")
+	}
+}
+
+func TestSyncFutureSchemaPullIsFatal(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pullErr: fmt.Errorf("parse origin/main:mise.toml: %w", env.ErrFutureSchema)}
+	f, _, _ := newTestFlowsWith(t, repo)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunSync(false, PolicyAsk); err == nil {
+		t.Fatal("RunSync must abort on future-schema remote")
+	} else if !errors.Is(err, env.ErrFutureSchema) {
+		t.Fatalf("error must wrap ErrFutureSchema, got: %v", err)
 	}
 }

@@ -67,6 +67,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | OS restriction doesn't match machine | declared, install skipped + notice | TestRunInstallWarnsOSSkip |
 | mise install silent no-op (broken symlink) | post-check warns | TestRunInstallWarnsStillMissing |
 | push fails (offline) | warn-and-defer to next sync, command succeeds | TestInstallDeferredPushOnFailure |
+| future-schema remote at push | fatal: Fail port, non-zero exit (no defer) | TestInstallFutureSchemaPushIsFatal |
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
 | existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
 | multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
@@ -128,6 +129,7 @@ PlanSync four-way:
 | offline deferred commits (ahead) | sync pushes pending after pull | TestSyncPullsBeforeApply |
 | future-schema remote | rejected BEFORE any reset/push; worktree untouched | TestSmartPullRejectsFutureSchemaWithoutTouchingWorktree, TestSmartPushRefusesToPushOntoFutureSchemaRemote |
 | pull network failure | warn, continue with local declaration | RunSync warn-and-continue (observed in live e2e) |
+| future-schema remote at pull | fatal: hard error, sync aborted | TestSyncFutureSchemaPullIsFatal |
 | orphans present | prompt → remove on approval / --prune unattended | TestRunSyncPruneRemovesOrphans |
 | orphan removal declined | "kept" notice + --prune hint | (symmetric path of the prune test) |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
