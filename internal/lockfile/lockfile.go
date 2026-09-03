@@ -1,3 +1,7 @@
+// Package lockfile guards against concurrent mison runs on one machine
+// with an flock(2) on a lock file outside the env repo. The kernel
+// releases the lock when the process dies — crashed runs never leave
+// stale locks behind.
 package lockfile
 
 import (
@@ -24,7 +28,7 @@ func Acquire(path string) (*Guard, error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, ErrLocked
 	}
 	return &Guard{f: f}, nil
