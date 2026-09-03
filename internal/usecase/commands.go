@@ -40,7 +40,7 @@ func (f *Flows) repoConfigPath() string {
 // resolveRepoName picks the repo name: explicit flag > persisted >
 // default. A successful connection persists the choice.
 func (f *Flows) resolveRepoName(flagged string) string {
-	if flagged != "" && flagged != DefaultRepoName {
+	if flagged != "" {
 		return flagged
 	}
 	if data, err := os.ReadFile(f.repoConfigPath()); err == nil {
@@ -50,7 +50,7 @@ func (f *Flows) resolveRepoName(flagged string) string {
 			}
 		}
 	}
-	return flagged
+	return DefaultRepoName
 }
 
 func (f *Flows) persistRepoName(name string) {

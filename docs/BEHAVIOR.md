@@ -45,6 +45,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |
+| explicit --repo flag vs persisted name | flag wins and is re-persisted | TestRunInitExplicitFlagWinsOverPersisted |
 | machine without git identity | repo-local mison@local fallback | TestSmartPushWithoutGitIdentity |
 | Connect target dir already has files | init+fetch+reset (not clone) | TestConnectFreshDir |
 | remote uses future schema | Connect refuses before reset; worktree untouched | TestConnectRejectsFutureSchemaRemote |

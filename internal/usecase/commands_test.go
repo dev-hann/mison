@@ -821,3 +821,28 @@ func TestSyncFutureSchemaPullIsFatal(t *testing.T) {
 		t.Fatalf("error must wrap ErrFutureSchema, got: %v", err)
 	}
 }
+
+func TestRunInitExplicitFlagWinsOverPersisted(t *testing.T) {
+	repo := &fakeRepo{}
+	f, _, _ := newTestFlowsWith(t, repo)
+
+	// a different name persisted from a previous init
+	cfgDir := filepath.Join(f.Home, ".mison")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("# managed by mison\nrepo = \"other-env\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunInit("mison-env"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.connected) > 0 || repo.remote != "https://github.com/me/mison-env.git" {
+		t.Fatalf("explicit flag must win, connected=%v remote=%v", repo.connected, repo.remote)
+	}
+	persisted, err := os.ReadFile(filepath.Join(cfgDir, "config.toml"))
+	if err != nil || !strings.Contains(string(persisted), "mison-env") {
+		t.Fatalf("flag choice must be persisted: %v %q", err, persisted)
+	}
+}
