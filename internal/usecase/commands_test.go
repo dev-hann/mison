@@ -24,6 +24,9 @@ type fakeMise struct {
 	execErr     error
 	listErr     error
 	execFailArg string
+	// lockResult: when set, Exec("lock", "--global") writes it to the
+	// env-dir lockfile — simulates mise's side effect through the symlink.
+	lockResult string
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -48,6 +51,11 @@ func (f *fakeMise) Exec(args ...string) error {
 	joined := strings.Join(args, " ")
 	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
 		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
+	}
+	if joined == "lock --global" && f.lockResult != "" {
+		if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(f.lockResult), 0o644); err != nil {
+			return err
+		}
 	}
 	f.execCalls = append(f.execCalls, joined)
 	return nil
@@ -249,8 +257,14 @@ func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 	if !strings.Contains(toml, `go = "latest"`) {
 		t.Errorf("mise.toml missing go latest:\n%s", toml)
 	}
-	if len(fm.execCalls) != 1 || fm.execCalls[0] != "install" {
-		t.Errorf("exec calls = %v, want [install]", fm.execCalls)
+	want := []string{"install", "lock --global"}
+	if len(fm.execCalls) != len(want) {
+		t.Fatalf("exec calls = %v, want %v", fm.execCalls, want)
+	}
+	for i := range want {
+		if fm.execCalls[i] != want[i] {
+			t.Errorf("exec calls = %v, want %v", fm.execCalls, want)
+		}
 	}
 	if !strings.Contains(out.String(), "Installing node, go") {
 		t.Errorf("output = %q", out.String())
@@ -921,5 +935,47 @@ func TestRunInitCreateRaceFallsBackToConnect(t *testing.T) {
 	}
 	if len(repo.connected) != 1 || repo.connected[0] != "https://github.com/me/mison-env.git" {
 		t.Fatalf("must connect to the raced repo, connected: %v", repo.connected)
+	}
+}
+
+func TestInstallRefreshesLockBeforePush(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	fm.lockResult = "# lock v1\n"
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	// lock regen must run after install and land in the same push
+	lockIdx, installIdx := -1, -1
+	for i, c := range fm.execCalls {
+		if c == "install" {
+			installIdx = i
+		}
+		if c == "lock --global" {
+			lockIdx = i
+		}
+	}
+	if installIdx == -1 || lockIdx == -1 || lockIdx < installIdx {
+		t.Fatalf("lock must be refreshed after apply, execCalls: %v", fm.execCalls)
+	}
+	if len(repo.pushes) == 0 {
+		t.Fatal("declaration push must still happen")
+	}
+	data, err := os.ReadFile(filepath.Join(f.Home, ".mison", "env", "mise.lock"))
+	if err != nil || string(data) != "# lock v1\n" {
+		t.Fatalf("lockfile not written through symlink: %v %q", err, data)
+	}
+}
+
+func TestInstallLockFailureWarnsAndDefers(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	fm.execFailArg = "lock"
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() must survive lock failure, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "could not refresh lockfile") {
+		t.Fatalf("lock failure must warn, output:\n%s", out.String())
 	}
 }

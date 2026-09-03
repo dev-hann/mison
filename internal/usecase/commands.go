@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -167,6 +168,20 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 	}
 }
 
+// refreshLock regenerates the lockfile: `mise lock --global` writes
+// through the ~/.config/mise/mise.lock symlink into the env repo
+// (DESIGN §8). Lock is derived state — best-effort, never blocks the
+// flow. Reports whether the lockfile content changed.
+func (f *Flows) refreshLock() bool {
+	before, _ := os.ReadFile(f.layout().MiseLock)
+	if err := f.Mise.Exec("lock", "--global"); err != nil {
+		f.UI.Warn("could not refresh lockfile — will retry on next sync (" + err.Error() + ")")
+		return false
+	}
+	after, _ := os.ReadFile(f.layout().MiseLock)
+	return !bytes.Equal(before, after)
+}
+
 // commitAndPush applies the push policy after a declaration change:
 // no repo → skip silently; divergence → reconcile; offline → warn and
 // defer to the next sync. Future-schema remotes are fatal — the local
@@ -246,6 +261,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 		return err
 	}
 	f.verifyVisible(names, skipped)
+	f.refreshLock()
 	return f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
 }
 
@@ -340,6 +356,7 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 			f.UI.Step(fmt.Sprintf("Removed %s (not installed)", name))
 		}
 	}
+	f.refreshLock()
 	return f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
 }
 
