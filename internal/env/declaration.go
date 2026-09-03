@@ -11,6 +11,14 @@ type Tool struct {
 	Options map[string]any
 }
 
+// PathBackend returns the machine-local path backing this tool (mise's
+// path backend), or "" for registry-backed tools. Path-backed entries
+// only work where the path exists — they are not portable.
+func (t Tool) PathBackend() string {
+	p, _ := t.Options["path"].(string)
+	return p
+}
+
 // Declaration is the parsed [tools] section of mise.toml.
 type Declaration struct {
 	Tools []Tool

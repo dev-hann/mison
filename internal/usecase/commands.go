@@ -433,6 +433,21 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 	return f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
 }
 
+// warnNonPortable surfaces path-backed tools in the declaration —
+// they only work where their machine-local path exists and will fail
+// on every other machine's sync (decision: warn, don't block).
+func (f *Flows) warnNonPortable(declared []env.Tool) {
+	var names []string
+	for _, t := range declared {
+		if p := t.PathBackend(); p != "" {
+			names = append(names, t.Name+" ("+p+")")
+		}
+	}
+	if len(names) > 0 {
+		f.UI.Warn("path-backed tools are machine-local: " + strings.Join(names, ", "))
+	}
+}
+
 // RunStatus implements the status flow (read-only).
 func (f *Flows) RunStatus() error {
 	if _, err := os.Stat(f.layout().MiseToml); err != nil {
@@ -472,6 +487,7 @@ func (f *Flows) RunStatus() error {
 	if missing > 0 {
 		r.Warn(fmt.Sprintf("%d tool(s) missing", missing))
 	}
+	f.warnNonPortable(declared)
 	return nil
 }
 
@@ -559,6 +575,7 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 			return fmt.Errorf("%w — drop broken tools with mison uninstall <tool>", err)
 		}
 		f.verifyDeclaredApplied(declared)
+		f.warnNonPortable(declared)
 	}
 
 	declaredNames := map[string]bool{}

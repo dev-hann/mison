@@ -1329,3 +1329,40 @@ func TestRunInitShowsGitHubAccount(t *testing.T) {
 		t.Fatalf("expected create path, output:\n%s", out.String())
 	}
 }
+
+func TestStatusWarnsPathBackedTools(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	toml := "[tools]\njq = \"latest\"\n\n[tools.mytool]\nversion = \"1.0\"\npath = \"/Users/me/dev/mytool\"\n"
+	if err := os.WriteFile(f.layout().MiseToml, []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fm, _ := f.Mise.(*fakeMise)
+	fm.setInstalled("jq", "1.8")
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "path-backed tools are machine-local") ||
+		!strings.Contains(out.String(), "mytool (/Users/me/dev/mytool)") {
+		t.Fatalf("path-backed declaration must warn:\n%s", out.String())
+	}
+}
+
+func TestStatusNoWarningWithoutPathTools(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm, _ := f.Mise.(*fakeMise)
+	fm.setInstalled("jq", "1.8")
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if strings.Contains(out.String(), "path-backed") {
+		t.Fatalf("registry-only declarations must not warn:\n%s", out.String())
+	}
+}
