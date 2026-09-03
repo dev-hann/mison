@@ -268,7 +268,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 
 	f.UI.Step(fmt.Sprintf("Installing %s", strings.Join(names, ", ")))
 	if err := f.Mise.Exec("install"); err != nil {
-		return err
+		return fmt.Errorf("%w — declaration saved; drop broken tools with mison uninstall <tool>", err)
 	}
 	f.verifyVisible(names, skipped)
 	f.refreshLock()
@@ -483,7 +483,7 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	if needsApply {
 		f.UI.Step("Installing declared tools")
 		if err := f.Mise.Exec("install"); err != nil {
-			return err
+			return fmt.Errorf("%w — drop broken tools with mison uninstall <tool>", err)
 		}
 		f.verifyDeclaredApplied(declared)
 	}

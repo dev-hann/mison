@@ -1157,3 +1157,32 @@ func TestRunInitNoRebindWithoutFlag(t *testing.T) {
 		t.Fatalf("existing remote must still pull, pulls = %d", repo.pulls)
 	}
 }
+
+func TestInstallFailureHintsRemoval(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	fm.execErr = errors.New("mise install: no version found for tool bogus-tool")
+
+	err := f.RunInstall([]string{"bogus-tool"}, "", PolicyAsk)
+	if err == nil {
+		t.Fatal("RunInstall must fail when mise install fails")
+	}
+	if !strings.Contains(err.Error(), "mison uninstall") {
+		t.Fatalf("error must hint removal of broken tools: %v", err)
+	}
+}
+
+func TestSyncApplyFailureHintsRemoval(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\nbogus = \"9.9\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fm.execErr = errors.New("mise install: no version found")
+
+	err := f.RunSync(false, PolicyAsk)
+	if err == nil || !strings.Contains(err.Error(), "mison uninstall") {
+		t.Fatalf("sync failure must hint removal, got: %v", err)
+	}
+}
