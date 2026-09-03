@@ -519,6 +519,13 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		r.Warn("kept (run mison sync --prune to remove automatically)")
 	}
 
+	if f.refreshLock() {
+		r.Step("Refreshing lockfile")
+		if err := f.commitAndPush("mison: refresh lock", policy); err != nil {
+			return err
+		}
+	}
+
 	if needsApply || len(orphans) > 0 {
 		r.Step("Environment synchronized")
 	} else {

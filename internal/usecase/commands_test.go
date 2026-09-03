@@ -979,3 +979,47 @@ func TestInstallLockFailureWarnsAndDefers(t *testing.T) {
 		t.Fatalf("lock failure must warn, output:\n%s", out.String())
 	}
 }
+
+func TestSyncPushesRefreshedLock(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, out := newTestFlowsWith(t, repo)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.lockResult = "# lock v2\n"
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	found := false
+	for _, p := range repo.pushes {
+		if p == "mison: refresh lock" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("changed lock must be pushed, pushes: %v", repo.pushes)
+	}
+	if !strings.Contains(out.String(), "Refreshing lockfile") {
+		t.Fatalf("lock refresh must be visible, output:\n%s", out.String())
+	}
+}
+
+func TestSyncSkipsLockPushWhenUnchanged(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, _, _ := newTestFlowsWith(t, repo)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// lockResult empty: mise "regenerates" nothing — lock stays absent
+	// before and after → unchanged → no lock push
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	for _, p := range repo.pushes {
+		if p == "mison: refresh lock" {
+			t.Fatalf("unchanged lock must not be pushed, pushes: %v", repo.pushes)
+		}
+	}
+}
