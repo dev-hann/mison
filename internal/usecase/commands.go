@@ -169,17 +169,29 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 	}
 }
 
-// refreshLock regenerates the lockfile: `mise lock --global` writes
-// through the ~/.config/mise/mise.lock symlink into the env repo
-// (DESIGN §8). Lock is derived state — best-effort, never blocks the
-// flow. Reports whether the lockfile content changed.
+// refreshLock regenerates the lockfile and reports whether the env
+// repo's lock content changed. `mise lock --global` writes via atomic
+// rename, which REPLACES the ~/.config/mise/mise.lock symlink with a
+// regular file (verified against mise 2026.9.1) — so mison adopts the
+// freshly written content into the env repo and restores the symlink.
+// The env repo stays the single source of truth. Lock is derived
+// state — best-effort, never blocks the flow.
 func (f *Flows) refreshLock() bool {
-	before, _ := os.ReadFile(f.layout().MiseLock)
+	l := f.layout()
+	before, _ := os.ReadFile(l.MiseLock)
 	if err := f.Mise.Exec("lock", "--global"); err != nil {
 		f.UI.Warn("could not refresh lockfile — will retry on next sync (" + err.Error() + ")")
 		return false
 	}
-	after, _ := os.ReadFile(f.layout().MiseLock)
+	if info, err := os.Lstat(l.GlobalLock); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		if data, readErr := os.ReadFile(l.GlobalLock); readErr == nil {
+			if writeErr := os.WriteFile(l.MiseLock, data, 0o644); writeErr == nil {
+				_ = os.Remove(l.GlobalLock)
+				_ = os.Symlink(l.MiseLock, l.GlobalLock)
+			}
+		}
+	}
+	after, _ := os.ReadFile(l.MiseLock)
 	return !bytes.Equal(before, after)
 }
 

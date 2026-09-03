@@ -68,7 +68,12 @@ func (f *fakeMise) Exec(args ...string) error {
 		}
 		f.lockCalls++
 		if content != "" {
-			if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(content), 0o644); err != nil {
+			// mimic real mise: atomic rename REPLACES the global-lock
+			// symlink with a regular file (content never lands in the
+			// env repo through the link)
+			global := filepath.Join(f.home, ".config", "mise", "mise.lock")
+			_ = os.Remove(global)
+			if err := os.WriteFile(global, []byte(content), 0o644); err != nil {
 				return err
 			}
 		}
