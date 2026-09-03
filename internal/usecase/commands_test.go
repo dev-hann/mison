@@ -1224,3 +1224,24 @@ func TestPushFailureHintsRebindWhenRepoGone(t *testing.T) {
 		t.Fatalf("repository-not-found must hint re-binding:\n%s", out.String())
 	}
 }
+
+func TestSyncOrphanDeclinedKeepsTools(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	f.Ask = &fakeAsk{confirm: false}
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.setInstalled("node", "22") // node installed but undeclared
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "kept") {
+		t.Fatalf("declined prune must be reported as kept:\n%s", out.String())
+	}
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "uninstall") {
+			t.Fatalf("declined prune must not uninstall, execCalls: %v", fm.execCalls)
+		}
+	}
+}
