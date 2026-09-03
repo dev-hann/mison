@@ -116,13 +116,25 @@ func (f *Flows) detect() detector.Info {
 
 func (f *Flows) envRepo() EnvRepoIface { return f.Git(f.layout().EnvDir) }
 
-// installedTools returns the ownership-filtered active tools.
+// installedTools returns the ownership-filtered active tools — used
+// for orphan detection only.
 func (f *Flows) installedTools() ([]env.Tool, error) {
 	entries, err := f.Mise.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
 	return OwnedTools(entries, f.Home), nil
+}
+
+// activeTools returns every active tool regardless of declaring
+// source — used for declaration diffs and visibility checks, where a
+// project-shadowed tool must still count as installed.
+func (f *Flows) activeTools() ([]env.Tool, error) {
+	entries, err := f.Mise.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+	return ActiveTools(entries), nil
 }
 
 func (f *Flows) ensureMise() error {
@@ -321,7 +333,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 // verifyVisible warns when tools mison just installed are not reported
 // by mise — catches silent no-ops (e.g. broken global-config symlink).
 func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
-	installed, err := f.installedTools()
+	installed, err := f.activeTools()
 	if err != nil {
 		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
@@ -341,7 +353,7 @@ func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
 // verifyDeclaredApplied re-checks the declaration after sync applied
 // it; OS-restricted tools that do not target this machine are exempt.
 func (f *Flows) verifyDeclaredApplied(declared []env.Tool) {
-	installed, err := f.installedTools()
+	installed, err := f.activeTools()
 	if err != nil {
 		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
@@ -387,7 +399,7 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 	}
 
 	installed := map[string]bool{}
-	if tools, err := f.installedTools(); err == nil {
+	if tools, err := f.activeTools(); err == nil {
 		for _, t := range tools {
 			installed[t.Name] = true
 		}
@@ -429,7 +441,7 @@ func (f *Flows) RunStatus() error {
 	if err != nil {
 		return err
 	}
-	installed, err := f.installedTools()
+	installed, err := f.activeTools()
 	if err != nil {
 		return err
 	}
@@ -527,7 +539,7 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		return err
 	}
 	declared := cfg.Tools()
-	installed, err := f.installedTools()
+	installed, err := f.activeTools()
 	if err != nil {
 		return err
 	}
@@ -552,8 +564,12 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	for _, t := range declared {
 		declaredNames[t.Name] = true
 	}
+	owned, err := f.installedTools()
+	if err != nil {
+		return err
+	}
 	var orphans []string
-	for _, t := range installed {
+	for _, t := range owned {
 		if t.Name == "gh" {
 			// gh is mison's bootstrap tool (auth + push) — never offer
 			// it for orphan removal; explicit `mison uninstall gh` stays

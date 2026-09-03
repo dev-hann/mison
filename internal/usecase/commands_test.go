@@ -1283,3 +1283,30 @@ func TestPushFailureHintsReloginOnAuthError(t *testing.T) {
 		t.Fatalf("auth failure must hint re-login:\n%s", out.String())
 	}
 }
+
+func TestStatusCountsProjectShadowedTools(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// go declared in the mison declaration but ACTIVATED by a project
+	// config that shadows the same name (real-world mise reports the
+	// project as the single source)
+	fm.extra = []miserepo.Entry{{
+		Name: "go", Version: "1.26.8", Active: true,
+		Source: "/some/project/mise.toml",
+	}}
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\ngo = \"1.26\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if strings.Contains(out.String(), "✗ go") {
+		t.Fatalf("project-shadowed declared tool must count as installed:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "✓ go") {
+		t.Fatalf("go should be reported OK:\n%s", out.String())
+	}
+}

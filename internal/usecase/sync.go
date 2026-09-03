@@ -383,11 +383,28 @@ func conflictNames(cs []env.Conflict) []string {
 	return names
 }
 
+// ActiveTools collapses raw mise entries to the active set, ignoring
+// source — for declaration diffs a tool is installed whoever declared
+// it (mise reports a project config as the source when it shadows a
+// globally declared name).
+func ActiveTools(entries []miserepo.Entry) []env.Tool {
+	seen := map[string]bool{}
+	var tools []env.Tool
+	for _, e := range entries {
+		if !e.Active || seen[e.Name] {
+			continue
+		}
+		seen[e.Name] = true
+		tools = append(tools, env.Tool{Name: e.Name, Version: e.Version})
+	}
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
+	return tools
+}
+
 // OwnedTools filters raw mise entries down to the active tools declared
 // by mison's own config (the global symlink or the ~/.mison/env
 // declaration). Project configs and foreign globals are excluded.
-func OwnedTools(entries []miserepo.Entry, home string) []env.Tool {
-	ours := ownedPaths(home)
+func OwnedTools(entries []miserepo.Entry, home string) []env.Tool {	ours := ownedPaths(home)
 	seen := map[string]bool{}
 	var tools []env.Tool
 	for _, e := range entries {
