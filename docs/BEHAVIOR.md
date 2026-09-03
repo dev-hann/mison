@@ -164,6 +164,9 @@ PlanSync four-way:
 | unknown sections ([env]/[tasks]) | preserved on rewrite | TestBytesPreservesUnknownSections |
 | os flag conversion (`--mac=arm64`) | normalized to `macos/arm64`; invalid → nil | TestParseOSSpec, TestParseOSSpecInvalid, TestAppliesTo |
 | OS-restricted tools in merge | os arrays are 3-way merged too | TestMergeOSEntryChange, TestMergeOSConflict |
+| option-only edit (postinstall, one side) | taken from the changed side — never silently dropped | TestMergeOptionOnlyRemoteEditTaken |
+| option-only edit, both sides differ | promoted to conflict | TestMergeOptionBothChangedDifferentlyConflicts |
+| merge winner applied to entry | non-nil Options = exact replace; nil = preserve existing | TestSetToolExactOptionsReplace, TestSetToolNilOptionsPreservesExisting |
 
 ## Known gaps (honest list — candidates, not commitments)
 

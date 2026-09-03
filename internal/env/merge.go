@@ -1,6 +1,9 @@
 package env
 
-import "sort"
+import (
+	"reflect"
+	"sort"
+)
 
 // Conflict describes a tool that local and remote changed differently.
 // Zero Tool values mean the tool is absent (removed) on that side.
@@ -96,7 +99,7 @@ func toolEqual(a, b Tool) bool {
 			return false
 		}
 	}
-	return true
+	return reflect.DeepEqual(a.Options, b.Options)
 }
 
 func toToolMap(tools []Tool) map[string]Tool {
