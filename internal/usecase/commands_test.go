@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/lockfile"
 	"github.com/dev-hann/mison/internal/repo/miserepo"
 )
 
@@ -68,7 +69,12 @@ func (f *fakeMise) Exec(args ...string) error {
 		}
 		f.lockCalls++
 		if content != "" {
-			if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(content), 0o644); err != nil {
+			// mimic real mise: atomic rename REPLACES the global-lock
+			// symlink with a regular file (content never lands in the
+			// env repo through the link)
+			global := filepath.Join(f.home, ".config", "mise", "mise.lock")
+			_ = os.Remove(global)
+			if err := os.WriteFile(global, []byte(content), 0o644); err != nil {
 				return err
 			}
 		}
@@ -1243,5 +1249,37 @@ func TestSyncOrphanDeclinedKeepsTools(t *testing.T) {
 		if strings.Contains(c, "uninstall") {
 			t.Fatalf("declined prune must not uninstall, execCalls: %v", fm.execCalls)
 		}
+	}
+}
+
+func TestConcurrentRunGuarded(t *testing.T) {
+	f, _, out := newTestFlows(t)
+
+	// simulate a second terminal already running mison
+	g, err := lockfile.Acquire(f.layout().RunLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err == nil {
+		t.Fatal("RunInstall must refuse while another run holds the lock")
+	} else if !strings.Contains(err.Error(), "another mison") {
+		t.Fatalf("error must explain the lock, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "✗") {
+		t.Fatalf("must report via Fail port:\n%s", out.String())
+	}
+}
+
+func TestPushFailureHintsReloginOnAuthError(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: could not read Username for 'https://github.com': terminal prompts disabled")}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "gh auth login") {
+		t.Fatalf("auth failure must hint re-login:\n%s", out.String())
 	}
 }

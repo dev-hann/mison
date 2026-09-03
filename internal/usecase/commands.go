@@ -12,6 +12,7 @@ import (
 
 	"github.com/dev-hann/mison/internal/detector"
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/lockfile"
 	"github.com/dev-hann/mison/internal/paths"
 	"github.com/dev-hann/mison/internal/repo/miserepo"
 	"github.com/dev-hann/mison/internal/ui"
@@ -102,6 +103,13 @@ type EnvRepoIface interface {
 }
 
 func (f *Flows) layout() paths.Layout { return paths.New(f.Home) }
+
+// acquireRunLock refuses to run while another mison process on this
+// machine holds the run lock (prevents git index corruption from two
+// concurrent syncs). Kernel-released: crashed runs never block.
+func (f *Flows) acquireRunLock() (*lockfile.Guard, error) {
+	return lockfile.Acquire(f.layout().RunLock)
+}
 func (f *Flows) detect() detector.Info {
 	return detector.Detect()
 }
@@ -169,18 +177,45 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 	}
 }
 
-// refreshLock regenerates the lockfile: `mise lock --global` writes
-// through the ~/.config/mise/mise.lock symlink into the env repo
-// (DESIGN §8). Lock is derived state — best-effort, never blocks the
-// flow. Reports whether the lockfile content changed.
+// refreshLock regenerates the lockfile and reports whether the env
+// repo's lock content changed. `mise lock --global` writes via atomic
+// rename, which REPLACES the ~/.config/mise/mise.lock symlink with a
+// regular file (verified against mise 2026.9.1) — so mison adopts the
+// freshly written content into the env repo and restores the symlink.
+// The env repo stays the single source of truth. Lock is derived
+// state — best-effort, never blocks the flow.
 func (f *Flows) refreshLock() bool {
-	before, _ := os.ReadFile(f.layout().MiseLock)
+	l := f.layout()
+	before, _ := os.ReadFile(l.MiseLock)
 	if err := f.Mise.Exec("lock", "--global"); err != nil {
 		f.UI.Warn("could not refresh lockfile — will retry on next sync (" + err.Error() + ")")
 		return false
 	}
-	after, _ := os.ReadFile(f.layout().MiseLock)
+	if info, err := os.Lstat(l.GlobalLock); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		if data, readErr := os.ReadFile(l.GlobalLock); readErr == nil {
+			if writeErr := os.WriteFile(l.MiseLock, data, 0o644); writeErr == nil {
+				_ = os.Remove(l.GlobalLock)
+				_ = os.Symlink(l.MiseLock, l.GlobalLock)
+			}
+		}
+	}
+	after, _ := os.ReadFile(l.MiseLock)
 	return !bytes.Equal(before, after)
+}
+
+// pushErrHint extends push/pull failure warnings with the recovery
+// path implied by the error text (heuristic — both hints are safe to
+// show even on a misread).
+func pushErrHint(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist"):
+		return " — the env repo may be gone; re-bind with mison init --repo <name>"
+	case strings.Contains(msg, "authentication") || strings.Contains(msg, "403") ||
+		strings.Contains(msg, "could not read Username"):
+		return " — GitHub auth expired; run mison init (gh auth login)"
+	}
+	return ""
 }
 
 // commitAndPush applies the push policy after a declaration change:
@@ -198,10 +233,7 @@ func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 			f.UI.Fail("declaration saved locally — push refused: " + err.Error())
 			return err
 		}
-		warn := "could not push — will retry on next sync (" + err.Error() + ")"
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
-			warn += " — the env repo may be gone; re-bind with mison init --repo <name>"
-		}
+		warn := "could not push — will retry on next sync (" + err.Error() + ")" + pushErrHint(err)
 		f.UI.Warn(warn)
 		return nil
 	}
@@ -227,6 +259,13 @@ func tool(name, version string) env.Tool {
 // RunInstall implements the install flow: declare tools, apply them,
 // verify visibility, push the declaration.
 func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	osSpec := env.ParseOSSpec(osFlag)
 	if osFlag != "" && osSpec == nil {
 		return fmt.Errorf("invalid OS spec %q (use mac, linux, linux/x64, linux/arm64, macos/arm64)", osFlag)
@@ -324,6 +363,13 @@ func (f *Flows) verifyDeclaredApplied(declared []env.Tool) {
 
 // RunUninstall implements the uninstall flow.
 func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	if !assumeYes && !f.Ask.Confirm(fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
 		return nil
 	}
@@ -444,6 +490,13 @@ func (f *Flows) renderSyncStatus() {
 // RunSync implements the sync flow: pull declaration (when connected),
 // apply it via mise, prune orphans on request.
 func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	if _, err := os.Stat(f.layout().MiseToml); err != nil {
 		return fmt.Errorf("no environment found — run mison init first")
 	}
@@ -463,7 +516,7 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		case errors.Is(err, env.ErrFutureSchema):
 			return err
 		case err != nil:
-			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
+			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")" + pushErrHint(err))
 		case len(merged) > 0:
 			f.UI.Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
 		}
@@ -564,6 +617,13 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 // mison environment (mise → gh → private env repo → declaration
 // symlink) and install the declared tools.
 func (f *Flows) RunInit(repoName string) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	r := f.UI
 	info := f.detect()
 	r.Step(fmt.Sprintf("Detected %s/%s", info.OS, info.Arch))

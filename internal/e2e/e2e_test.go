@@ -66,3 +66,58 @@ func TestGhAuthAndRepoURL(t *testing.T) {
 		t.Fatalf("RepoURL() = %q", url)
 	}
 }
+
+func TestLockGlobalDeterministic(t *testing.T) {
+	miseBin := filepath.Join(os.Getenv("HOME"), ".local", "bin", "mise")
+	if _, err := os.Stat(miseBin); err != nil {
+		t.Skip("mise not installed on this machine")
+	}
+
+	home := t.TempDir()
+	envDir := filepath.Join(home, ".mison", "env")
+	cfgDir := filepath.Join(home, ".config", "mise")
+	for _, d := range []string{envDir, cfgDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	toml := filepath.Join(envDir, "mise.toml")
+	if err := os.WriteFile(toml, []byte("[tools]\njq = \"latest\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(toml, filepath.Join(cfgDir, "config.toml")); err != nil {
+		t.Fatal(err)
+	}
+	globalLock := filepath.Join(cfgDir, "mise.lock")
+	// dangling symlink exactly as mison's paths.Ensure creates it
+	if err := os.Symlink(filepath.Join(envDir, "mise.lock"), globalLock); err != nil {
+		t.Fatal(err)
+	}
+
+	lock := func() string {
+		cmd := exec.Command(miseBin, "lock", "--global")
+		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("mise lock: %v\n%s", err, out)
+		}
+		data, err := os.ReadFile(globalLock)
+		if err != nil {
+			t.Fatalf("read lock: %v", err)
+		}
+		return string(data)
+	}
+
+	first := lock()
+	// pin the behavior mison's refreshLock adopts around: mise lock
+	// replaces the symlink with a regular file (atomic rename)
+	if info, err := os.Lstat(globalLock); err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("expected mise lock to clobber the symlink with a regular file: %v", err)
+	}
+	second := lock()
+	if first != second {
+		t.Fatal("mise lock --global must be byte-deterministic across runs")
+	}
+	if strings.Contains(strings.ToLower(first), "timestamp") {
+		t.Fatal("lockfile must not embed timestamps (would break cross-machine convergence)")
+	}
+}
