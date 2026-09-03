@@ -1271,3 +1271,15 @@ func TestConcurrentRunGuarded(t *testing.T) {
 		t.Fatalf("must report via Fail port:\n%s", out.String())
 	}
 }
+
+func TestPushFailureHintsReloginOnAuthError(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: could not read Username for 'https://github.com': terminal prompts disabled")}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "gh auth login") {
+		t.Fatalf("auth failure must hint re-login:\n%s", out.String())
+	}
+}

@@ -203,6 +203,21 @@ func (f *Flows) refreshLock() bool {
 	return !bytes.Equal(before, after)
 }
 
+// pushErrHint extends push/pull failure warnings with the recovery
+// path implied by the error text (heuristic — both hints are safe to
+// show even on a misread).
+func pushErrHint(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist"):
+		return " — the env repo may be gone; re-bind with mison init --repo <name>"
+	case strings.Contains(msg, "authentication") || strings.Contains(msg, "403") ||
+		strings.Contains(msg, "could not read Username"):
+		return " — GitHub auth expired; run mison init (gh auth login)"
+	}
+	return ""
+}
+
 // commitAndPush applies the push policy after a declaration change:
 // no repo → skip silently; divergence → reconcile; offline → warn and
 // defer to the next sync. Future-schema remotes are fatal — the local
@@ -218,10 +233,7 @@ func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 			f.UI.Fail("declaration saved locally — push refused: " + err.Error())
 			return err
 		}
-		warn := "could not push — will retry on next sync (" + err.Error() + ")"
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
-			warn += " — the env repo may be gone; re-bind with mison init --repo <name>"
-		}
+		warn := "could not push — will retry on next sync (" + err.Error() + ")" + pushErrHint(err)
 		f.UI.Warn(warn)
 		return nil
 	}
@@ -504,7 +516,7 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		case errors.Is(err, env.ErrFutureSchema):
 			return err
 		case err != nil:
-			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
+			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")" + pushErrHint(err))
 		case len(merged) > 0:
 			f.UI.Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
 		}
