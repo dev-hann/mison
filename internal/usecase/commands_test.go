@@ -157,16 +157,18 @@ type fakeGh struct {
 	exists    bool
 	url       string
 	createErr error
+	whoami    string
 	// existsFlip: when set, the first RepoExists call returns false and
 	// later calls return exists — simulates a create race.
 	existsFlip bool
 	existsSeen int
 }
 
-func (f *fakeGh) IsInstalled() bool { return f.installed }
-func (f *fakeGh) AuthStatus() bool  { return f.authed }
-func (f *fakeGh) AuthLogin() error  { f.authed = true; return nil }
-func (f *fakeGh) SetupGit() error   { return nil }
+func (f *fakeGh) IsInstalled() bool       { return f.installed }
+func (f *fakeGh) AuthStatus() bool        { return f.authed }
+func (f *fakeGh) Whoami() (string, error) { return f.whoami, nil }
+func (f *fakeGh) AuthLogin() error        { f.authed = true; return nil }
+func (f *fakeGh) SetupGit() error         { return nil }
 func (f *fakeGh) RepoExists(string) bool {
 	f.existsSeen++
 	if f.existsFlip && f.existsSeen == 1 {
@@ -1308,5 +1310,22 @@ func TestStatusCountsProjectShadowedTools(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "✓ go") {
 		t.Fatalf("go should be reported OK:\n%s", out.String())
+	}
+}
+
+func TestRunInitShowsGitHubAccount(t *testing.T) {
+	repo := &fakeRepo{}
+	f, _, out := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true, whoami: "dev-hann"}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "GitHub account: dev-hann") {
+		t.Fatalf("init must show the active account before creating anything:\n%s", out.String())
+	}
+	// the notice must precede repo creation (create path ran last)
+	if !strings.Contains(out.String(), "Creating environment repository") {
+		t.Fatalf("expected create path, output:\n%s", out.String())
 	}
 }
