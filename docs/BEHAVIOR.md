@@ -47,6 +47,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |
 | machine without git identity | repo-local mison@local fallback | TestSmartPushWithoutGitIdentity |
 | Connect target dir already has files | init+fetch+reset (not clone) | TestConnectFreshDir |
+| remote uses future schema | Connect refuses before reset; worktree untouched | TestConnectRejectsFutureSchemaRemote |
 
 ## mison install <tools...> [--mac/--linux] [--ours/--theirs]
 
