@@ -114,3 +114,57 @@ func TestEnsureReplacesForeignFile(t *testing.T) {
 		t.Fatalf("foreign file should be replaced by symlink: %v", err)
 	}
 }
+
+func TestLayoutLockPaths(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	l := New("/home/u")
+	if l.MiseLock != filepath.Join(l.EnvDir, "mise.lock") {
+		t.Errorf("MiseLock = %q", l.MiseLock)
+	}
+	if l.GlobalLock != "/home/u/.config/mise/mise.lock" {
+		t.Errorf("GlobalLock = %q", l.GlobalLock)
+	}
+}
+
+func TestEnsureSymlinksGlobalLock(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	l := New(home)
+
+	if _, err := l.Ensure(); err != nil {
+		t.Fatalf("Ensure(): %v", err)
+	}
+
+	info, err := os.Lstat(l.GlobalLock)
+	if err != nil {
+		t.Fatalf("global lock symlink missing: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("global lock is not a symlink: mode=%v", info.Mode())
+	}
+	target, _ := os.Readlink(l.GlobalLock)
+	if target != l.MiseLock {
+		t.Fatalf("lock symlink target = %q, want %q", target, l.MiseLock)
+	}
+}
+
+func TestEnsureReplacesForeignLockFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	l := New(home)
+
+	if err := os.MkdirAll(filepath.Dir(l.GlobalLock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(l.GlobalLock, []byte("# stale lock"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := l.Ensure(); err != nil {
+		t.Fatalf("Ensure(): %v", err)
+	}
+	info, err := os.Lstat(l.GlobalLock)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("foreign lock file should be replaced by symlink: %v", err)
+	}
+}

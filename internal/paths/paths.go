@@ -2,8 +2,11 @@
 //
 //	~/.mison/env/            environment repository clone (M2) / local file (M1)
 //	~/.mison/env/mise.toml   the shared declaration
+//	~/.mison/env/mise.lock   the derived lockfile (regenerated, never merged)
 //	~/.config/mise/config.toml  symlink → declaration, so mise reads
 //	                            the same file mison manages.
+//	~/.config/mise/mise.lock    symlink → lockfile, so `mise lock`
+//	                            writes into the environment repository.
 package paths
 
 import (
@@ -18,7 +21,9 @@ import (
 type Layout struct {
 	EnvDir       string
 	MiseToml     string
+	MiseLock     string
 	GlobalConfig string
+	GlobalLock   string
 }
 
 // New resolves the layout under the default XDG config dir.
@@ -36,7 +41,9 @@ func NewEnv(home, xdgConfig string) Layout {
 	return Layout{
 		EnvDir:       envDir,
 		MiseToml:     filepath.Join(envDir, "mise.toml"),
+		MiseLock:     filepath.Join(envDir, "mise.lock"),
 		GlobalConfig: filepath.Join(configDir, "mise", "config.toml"),
+		GlobalLock:   filepath.Join(configDir, "mise", "mise.lock"),
 	}
 }
 
@@ -56,33 +63,37 @@ func (l Layout) Ensure() (created bool, err error) {
 		return false, fmt.Errorf("stat mise.toml: %w", statErr)
 	}
 
-	linkCreated, err := l.ensureSymlink()
+	linkCreated, err := l.ensureSymlink(l.GlobalConfig, l.MiseToml)
 	if err != nil {
 		return created, err
 	}
-	return created || linkCreated, nil
+	lockCreated, err := l.ensureSymlink(l.GlobalLock, l.MiseLock)
+	if err != nil {
+		return created, err
+	}
+	return created || linkCreated || lockCreated, nil
 }
 
-func (l Layout) ensureSymlink() (bool, error) {
-	if info, err := os.Lstat(l.GlobalConfig); err == nil {
+func (l Layout) ensureSymlink(path, target string) (bool, error) {
+	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			if target, _ := os.Readlink(l.GlobalConfig); target == l.MiseToml {
+			if cur, _ := os.Readlink(path); cur == target {
 				return false, nil
 			}
 		}
 		// foreign file or wrong symlink target: replace
-		if err := os.Remove(l.GlobalConfig); err != nil {
-			return false, fmt.Errorf("replace global config: %w", err)
+		if err := os.Remove(path); err != nil {
+			return false, fmt.Errorf("replace %s: %w", filepath.Base(path), err)
 		}
 	} else if !os.IsNotExist(err) {
-		return false, fmt.Errorf("stat global config: %w", err)
+		return false, fmt.Errorf("stat %s: %w", filepath.Base(path), err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(l.GlobalConfig), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, fmt.Errorf("create config dir: %w", err)
 	}
-	if err := os.Symlink(l.MiseToml, l.GlobalConfig); err != nil {
-		return false, fmt.Errorf("symlink global config: %w", err)
+	if err := os.Symlink(target, path); err != nil {
+		return false, fmt.Errorf("symlink %s: %w", filepath.Base(path), err)
 	}
 	return true, nil
 }
