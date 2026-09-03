@@ -50,6 +50,8 @@ second concurrent run on this machine                  refused (flock run mutex,
 | remote repo exists but empty | Connect then seed push | TestRunInitExistingEmptyRepoSeedsInitialPush |
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
 | active gh account | shown before anything is created (multi-account safety) | TestRunInitShowsGitHubAccount |
+| shell not wired to mise | rc gains marked `mise activate` block (nvm pattern, idempotent); unknown shell → manual hint; `--no-shell-setup` opts out | TestInitActivatesShell, TestInitShellActivationIdempotent, TestInitSkipsActivationWhenAlreadyWired, TestInitUnknownShellPrintsHintOnly, TestInitNoShellSetupSkips |
+| init epilogue | `Run exec <shell> (or open a new terminal)` — child processes cannot touch the parent shell env | TestInitActivatesShell |
 | explicit --repo differs from current remote | remote set-url (re-bind) → SmartPull | TestRunInitRebindsToExplicitRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |

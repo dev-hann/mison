@@ -77,4 +77,4 @@ case ":$PATH:" in
   *) printf 'mison: note: %s is not on your PATH\n' "$BIN_DIR" >&2 ;;
 esac
 
-log "next: mison init   (set up this machine and link GitHub)"
+log "next: mison init   (installs mise, links GitHub, wires your shell)"

@@ -60,13 +60,18 @@ less install.sh && sh install.sh
 ## Usage
 
 ```bash
-mison init                    # bootstrap: mise → gh → auth → private env repo
+mison init                    # bootstrap: mise → shell wiring → gh → env repo
 mison install node@22 rg      # declare + install + auto commit & push
 mison install docker --linux  # OS-scoped: only installs on Linux machines
 mison uninstall node --yes    # remove everywhere + auto push
 mison sync                    # pull latest declaration and apply it
 mison status                  # compare declaration vs installed (✓ ✗ ⚠)
 ```
+
+After `mison init` on a fresh machine, run `exec zsh` (or open a new
+terminal) — the init command wires `mise activate` into your shell rc
+automatically, but a running terminal can only pick that up by
+restarting. `mison init --no-shell-setup` leaves rc files untouched.
 
 ### Sync semantics
 
