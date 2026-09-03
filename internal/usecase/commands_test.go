@@ -1186,3 +1186,29 @@ func TestSyncApplyFailureHintsRemoval(t *testing.T) {
 		t.Fatalf("sync failure must hint removal, got: %v", err)
 	}
 }
+
+func TestStatusWithoutEnvironmentHintsInit(t *testing.T) {
+	f, _, _ := newTestFlows(t) // fresh home, no init
+	err := f.RunStatus()
+	if err == nil || !strings.Contains(err.Error(), "mison init") {
+		t.Fatalf("status before init must hint init, got: %v", err)
+	}
+}
+
+func TestStatusMismatchHintsSync(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\nnode = \"22\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fm.setInstalled("node", "20")
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "run mison sync") || !strings.Contains(out.String(), "declared 22, installed 20") {
+		t.Fatalf("mismatch must show versions and sync hint:\n%s", out.String())
+	}
+}

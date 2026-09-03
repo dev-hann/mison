@@ -372,6 +372,9 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 
 // RunStatus implements the status flow (read-only).
 func (f *Flows) RunStatus() error {
+	if _, err := os.Stat(f.layout().MiseToml); err != nil {
+		return fmt.Errorf("no environment found — run mison init first")
+	}
 	cfg, err := f.loadConfig()
 	if err != nil {
 		return err
@@ -397,7 +400,7 @@ func (f *Flows) RunStatus() error {
 			missing++
 		case env.StateMismatch:
 			r.ToolLine(ui.MarkWarning, st.Tool.Name,
-				fmt.Sprintf("declared %s, installed %s", st.Tool.Version, st.Installed))
+				fmt.Sprintf("declared %s, installed %s — run mison sync", st.Tool.Version, st.Installed))
 		}
 	}
 	if len(diff) == 0 {
