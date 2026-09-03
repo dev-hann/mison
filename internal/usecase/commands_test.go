@@ -407,7 +407,7 @@ func TestRunStatusRendersStates(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"✓ node (22)",
-		"⚠ go (declared 1.25, installed 1.24.0)",
+		"⚠ go (declared 1.25, installed 1.24.0 — run mison sync)",
 		"✗ python (missing",
 	} {
 		if !strings.Contains(got, want) {
