@@ -2,6 +2,7 @@ package env
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -49,6 +50,10 @@ func TestParseLockPlatformSets(t *testing.T) {
 	got, err := ParseLock([]byte(lockFixture))
 	if err != nil {
 		t.Fatalf("ParseLock() error = %v", err)
+	}
+	for name, ps := range got {
+		sort.Strings(ps)
+		got[name] = ps
 	}
 	want := map[string][]string{
 		"delta": {"linux-x64", "macos-arm64"},

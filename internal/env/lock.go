@@ -21,15 +21,20 @@ func ParseLock(data []byte) (map[string][]string, error) {
 	out := map[string][]string{}
 	tools, _ := raw["tools"].(map[string]any)
 	for name, entries := range tools {
-		list, ok := entries.([]any)
-		if !ok {
-			continue
-		}
-		for _, e := range list {
-			entry, ok := e.(map[string]any)
-			if !ok {
-				continue
+		// BurntSushi decodes [[tools.x]] as []map[string]any; stay
+		// permissive for other decoders
+		var list []map[string]any
+		switch t := entries.(type) {
+		case []map[string]any:
+			list = t
+		case []any:
+			for _, e := range t {
+				if m, ok := e.(map[string]any); ok {
+					list = append(list, m)
+				}
 			}
+		}
+		for _, entry := range list {
 			for key := range entry {
 				if platform, ok := strings.CutPrefix(key, "platforms."); ok {
 					out[name] = appendUnique(out[name], platform)
