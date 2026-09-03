@@ -16,6 +16,8 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 ~/.mison/env + config symlink ensured (idempotent)     TestEnsureCreatesEnvDirAndFile
                                                         TestEnsureIdempotent
 ~/.config/mise/mise.lock symlink → env repo lockfile   TestEnsureSymlinksGlobalLock
+standalone mise user's real config/lock replaced       backed up to <name>.mison-bak
+                                                        TestEnsureReplacesForeignFile/LockFile
 ```
 
 ## mison init
