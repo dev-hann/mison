@@ -93,6 +93,7 @@ type EnvRepoIface interface {
 	Init() error
 	Connect(url string) error
 	RemoteAdd(url string) error
+	RemoteSetURL(url string) error
 	RemoteURL() string
 	RemoteIsEmpty() bool
 	SyncStatus() (SyncInfo, error)
@@ -571,8 +572,9 @@ func (f *Flows) RunInit(repoName string) error {
 		return err
 	}
 
+	explicit := repoName != ""
 	repoName = f.resolveRepoName(repoName)
-	if err := f.connectRepo(repoName); err != nil {
+	if err := f.connectRepo(repoName, explicit); err != nil {
 		return err
 	}
 	f.persistRepoName(repoName)
@@ -647,15 +649,24 @@ func (f *Flows) connectExisting(repo EnvRepoIface, repoName string) error {
 }
 
 // connectRepo links ~/.mison/env to the GitHub environment repo:
-// local clone → smart pull; remote exists (another machine created it)
-// → connect by fetch+reset; otherwise create the private repo, init
+// local clone → smart pull (explicit --repo re-binds first when the
+// target differs); remote exists (another machine created it) →
+// connect by fetch+reset; otherwise create the private repo, init
 // git, and push the initial declaration. A create race (another
 // machine created the repo between our exists-check and the create)
 // falls back to connecting.
-func (f *Flows) connectRepo(repoName string) error {
+func (f *Flows) connectRepo(repoName string, explicit bool) error {
 	repo := f.envRepo()
 
 	if repo.IsRepo() && repo.RemoteURL() != "" {
+		if explicit {
+			if url, err := f.Gh.RepoURL(repoName); err == nil && url != "" && url != repo.RemoteURL() {
+				f.UI.Step("Re-binding to " + repoName)
+				if err := repo.RemoteSetURL(url); err != nil {
+					return err
+				}
+			}
+		}
 		f.UI.Step("Connecting environment")
 		_, err := repo.SmartPull(f.makeResolver(PolicyAsk))
 		return err

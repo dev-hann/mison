@@ -47,6 +47,7 @@ standalone mise user's real config/lock replaced       backed up to <name>.mison
 | create race (repo appears between check and create) | create fails → re-check → Connect | TestRunInitCreateRaceFallsBackToConnect |
 | remote repo exists but empty | Connect then seed push | TestRunInitExistingEmptyRepoSeedsInitialPush |
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
+| explicit --repo differs from current remote | remote set-url (re-bind) → SmartPull | TestRunInitRebindsToExplicitRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |
 | explicit --repo flag vs persisted name | flag wins and is re-persisted | TestRunInitExplicitFlagWinsOverPersisted |

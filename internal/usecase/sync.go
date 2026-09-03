@@ -94,6 +94,9 @@ func (e *Engine) Init() error { return e.git.Init() }
 // RemoteAdd registers origin.
 func (e *Engine) RemoteAdd(url string) error { return e.git.RemoteAdd(url) }
 
+// RemoteSetURL re-points origin at a different repository.
+func (e *Engine) RemoteSetURL(url string) error { return e.git.RemoteSetURL(url) }
+
 // RemoteURL returns the origin URL ("" when absent).
 func (e *Engine) RemoteURL() string { return e.git.RemoteURL() }
 

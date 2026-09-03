@@ -94,6 +94,7 @@ type fakeRepo struct {
 	pullErr     error
 	mergedOn    []string
 	connected   []string
+	setURLs     []string
 	remoteEmpty bool
 	syncState   SyncState
 	remoteAdded []string
@@ -104,6 +105,11 @@ type fakeRepo struct {
 func (f *fakeRepo) IsRepo() bool { return f.isRepo }
 func (f *fakeRepo) Init() error  { f.isRepo = true; return nil }
 func (f *fakeRepo) RemoteAdd(url string) error {
+	f.remote = url
+	return nil
+}
+func (f *fakeRepo) RemoteSetURL(url string) error {
+	f.setURLs = append(f.setURLs, url)
 	f.remote = url
 	return nil
 }
@@ -1118,5 +1124,36 @@ func TestPushWithoutMergeSkipsLockRepush(t *testing.T) {
 	}
 	if len(repo.pushes) != 1 || repo.pushes[0] != "install: go" {
 		t.Fatalf("pushes = %v, want only [install: go]", repo.pushes)
+	}
+}
+
+func TestRunInitRebindsToExplicitRepo(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, remote: "https://github.com/me/old-env.git"}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true, url: "https://github.com/me/new-env.git"}
+
+	if err := f.RunInit("new-env"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.setURLs) != 1 || repo.setURLs[0] != "https://github.com/me/new-env.git" {
+		t.Fatalf("explicit flag must re-bind the remote: %v", repo.setURLs)
+	}
+	if repo.pulls != 1 {
+		t.Fatalf("re-bind must be followed by a pull, pulls = %d", repo.pulls)
+	}
+}
+
+func TestRunInitNoRebindWithoutFlag(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, remote: "https://github.com/me/old-env.git"}
+	f, _, _ := newTestFlowsWith(t, repo)
+
+	if err := f.RunInit(""); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.setURLs) != 0 {
+		t.Fatalf("no flag → no re-bind, setURLs: %v", repo.setURLs)
+	}
+	if repo.pulls != 1 {
+		t.Fatalf("existing remote must still pull, pulls = %d", repo.pulls)
 	}
 }

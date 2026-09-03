@@ -43,6 +43,12 @@ func (g *Repo) RemoteAdd(url string) error {
 	return err
 }
 
+// RemoteSetURL points origin at a different repository (re-binding).
+func (g *Repo) RemoteSetURL(url string) error {
+	_, err := g.run("remote", "set-url", "origin", url)
+	return err
+}
+
 // RemoteURL returns the origin URL ("" when absent).
 func (g *Repo) RemoteURL() string {
 	out, err := g.run("remote", "get-url", "origin")
