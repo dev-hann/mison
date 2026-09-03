@@ -22,6 +22,7 @@ import (
 type GhClient interface {
 	IsInstalled() bool
 	AuthStatus() bool
+	Whoami() (string, error)
 	AuthLogin() error
 	SetupGit() error
 	RepoExists(name string) bool
@@ -653,6 +654,13 @@ func (f *Flows) RunInit(repoName string) error {
 
 	if err := f.ensureGh(); err != nil {
 		return err
+	}
+
+	// surface the ACTIVE gh account before anything is created — with
+	// multiple accounts logged in, gh operates as whichever is active,
+	// and silently creating the env repo under the wrong one is costly
+	if login, err := f.Gh.Whoami(); err == nil && login != "" {
+		r.Line("GitHub account: " + login)
 	}
 
 	explicit := repoName != ""

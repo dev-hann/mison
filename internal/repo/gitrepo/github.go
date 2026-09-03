@@ -35,6 +35,16 @@ func (c *GitHub) AuthStatus() bool {
 	return err == nil
 }
 
+// Whoami returns the login of the ACTIVE gh account — with multiple
+// accounts logged in, gh operates as whichever is active.
+func (c *GitHub) Whoami() (string, error) {
+	out, err := c.run("api", "user", "--jq", ".login")
+	if err != nil {
+		return "", fmt.Errorf("gh api user: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // AuthLogin runs the interactive device-flow login. The child process
 // owns the terminal (stdio passthrough) — the documented exception to
 // the interaction ports.
