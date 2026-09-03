@@ -478,25 +478,28 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		r.Step(fmt.Sprintf("Pruning %s", name))
 		return f.Mise.Exec("uninstall", "--all", name)
 	}
+	pruneAll := func() error {
+		var failed []string
+		for _, name := range orphans {
+			if err := removeOrphan(name); err != nil {
+				failed = append(failed, name+": "+err.Error())
+			}
+		}
+		if len(failed) > 0 {
+			return fmt.Errorf("pruned with failures: %s", strings.Join(failed, "; "))
+		}
+		return nil
+	}
 	switch {
 	case len(orphans) == 0:
 		// nothing extra
 	case prune:
-		for _, name := range orphans {
-			if err := removeOrphan(name); err != nil {
-				return err
-			}
-		}
+		return pruneAll()
 	default:
 		if f.Ask.Confirm(fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
-			for _, name := range orphans {
-				if err := removeOrphan(name); err != nil {
-					return err
-				}
-			}
-		} else {
-			r.Warn("kept (run mison sync --prune to remove automatically)")
+			return pruneAll()
 		}
+		r.Warn("kept (run mison sync --prune to remove automatically)")
 	}
 
 	if needsApply || len(orphans) > 0 {

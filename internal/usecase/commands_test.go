@@ -23,6 +23,7 @@ type fakeMise struct {
 	installDone bool
 	execErr     error
 	listErr     error
+	execFailArg string
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -44,7 +45,11 @@ func (f *fakeMise) Exec(args ...string) error {
 	if f.execErr != nil {
 		return f.execErr
 	}
-	f.execCalls = append(f.execCalls, strings.Join(args, " "))
+	joined := strings.Join(args, " ")
+	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
+		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
+	}
+	f.execCalls = append(f.execCalls, joined)
 	return nil
 }
 func (f *fakeMise) ListInstalled() ([]miserepo.Entry, error) {
@@ -860,5 +865,30 @@ func TestVerifyWarnsWhenListFails(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "could not verify installation") {
 		t.Fatalf("list failure must warn, output:\n%s", out.String())
+	}
+}
+
+func TestSyncPruneContinuesPastFailures(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// two orphans: jq sorts first and fails; node must still be attempted
+	fm.setInstalled("node", "22", "jq", "1.7")
+	fm.execFailArg = "jq"
+
+	err := f.RunSync(true, PolicyAsk) // --prune: unattended
+	if err == nil || !strings.Contains(err.Error(), "jq") {
+		t.Fatalf("RunSync() must report the failed prune, got: %v", err)
+	}
+	// node must still have been pruned after jq failed
+	attempted := false
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "node") {
+			attempted = true
+		}
+	}
+	if !attempted {
+		t.Fatalf("prune must continue past failures, execCalls: %v", fm.execCalls)
 	}
 }
