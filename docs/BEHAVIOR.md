@@ -41,6 +41,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 |---|---|---|
 | gh entirely missing | installed via mise, declared, authenticated — full chain | TestRunInitGhNotInstalledFlow |
 | second machine (repo exists) | Connect instead of create | TestRunInitSecondMachineConnectsExistingRepo |
+| create race (repo appears between check and create) | create fails → re-check → Connect | TestRunInitCreateRaceFallsBackToConnect |
 | remote repo exists but empty | Connect then seed push | TestRunInitExistingEmptyRepoSeedsInitialPush |
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |

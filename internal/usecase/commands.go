@@ -580,39 +580,50 @@ func (f *Flows) ensureGh() error {
 	return f.Gh.SetupGit()
 }
 
+// connectExisting links to a repo another machine already created:
+// fetch+reset (or seed push when the remote is still empty).
+func (f *Flows) connectExisting(repo EnvRepoIface, repoName string) error {
+	f.UI.Step("Connecting to existing environment repository " + repoName)
+	url, err := f.Gh.RepoURL(repoName)
+	if err != nil {
+		return err
+	}
+	if err := repo.Connect(url); err != nil {
+		return err
+	}
+	if repo.RemoteIsEmpty() {
+		// remote created but never seeded: push the initial state
+		_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
+	}
+	return err
+}
+
 // connectRepo links ~/.mison/env to the GitHub environment repo:
 // local clone → smart pull; remote exists (another machine created it)
 // → connect by fetch+reset; otherwise create the private repo, init
-// git, and push the initial declaration.
+// git, and push the initial declaration. A create race (another
+// machine created the repo between our exists-check and the create)
+// falls back to connecting.
 func (f *Flows) connectRepo(repoName string) error {
-	r := f.UI
 	repo := f.envRepo()
 
 	if repo.IsRepo() && repo.RemoteURL() != "" {
-		r.Step("Connecting environment")
+		f.UI.Step("Connecting environment")
 		_, err := repo.SmartPull(f.makeResolver(PolicyAsk))
 		return err
 	}
 
 	if f.Gh.RepoExists(repoName) {
-		r.Step("Connecting to existing environment repository " + repoName)
-		url, err := f.Gh.RepoURL(repoName)
-		if err != nil {
-			return err
-		}
-		if err := repo.Connect(url); err != nil {
-			return err
-		}
-		if repo.RemoteIsEmpty() {
-			// remote created but never seeded: push the initial state
-			_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
-		}
-		return err
+		return f.connectExisting(repo, repoName)
 	}
 
-	r.Step("Creating environment repository " + repoName)
+	f.UI.Step("Creating environment repository " + repoName)
 	url, err := f.Gh.CreatePrivateRepo(repoName)
 	if err != nil {
+		if f.Gh.RepoExists(repoName) {
+			// another machine won the create race — connect instead
+			return f.connectExisting(repo, repoName)
+		}
 		return err
 	}
 

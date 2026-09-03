@@ -120,15 +120,29 @@ type fakeGh struct {
 	created   []string
 	exists    bool
 	url       string
+	createErr error
+	// existsFlip: when set, the first RepoExists call returns false and
+	// later calls return exists — simulates a create race.
+	existsFlip bool
+	existsSeen int
 }
 
-func (f *fakeGh) IsInstalled() bool              { return f.installed }
-func (f *fakeGh) AuthStatus() bool               { return f.authed }
-func (f *fakeGh) AuthLogin() error               { f.authed = true; return nil }
-func (f *fakeGh) SetupGit() error                { return nil }
-func (f *fakeGh) RepoExists(string) bool         { return f.exists }
+func (f *fakeGh) IsInstalled() bool { return f.installed }
+func (f *fakeGh) AuthStatus() bool  { return f.authed }
+func (f *fakeGh) AuthLogin() error  { f.authed = true; return nil }
+func (f *fakeGh) SetupGit() error   { return nil }
+func (f *fakeGh) RepoExists(string) bool {
+	f.existsSeen++
+	if f.existsFlip && f.existsSeen == 1 {
+		return false
+	}
+	return f.exists
+}
 func (f *fakeGh) RepoURL(string) (string, error) { return f.url, nil }
 func (f *fakeGh) CreatePrivateRepo(name string) (string, error) {
+	if f.createErr != nil {
+		return "", f.createErr
+	}
 	f.created = append(f.created, name)
 	return "https://github.com/me/" + name + ".git", nil
 }
@@ -890,5 +904,22 @@ func TestSyncPruneContinuesPastFailures(t *testing.T) {
 	}
 	if !attempted {
 		t.Fatalf("prune must continue past failures, execCalls: %v", fm.execCalls)
+	}
+}
+
+func TestRunInitCreateRaceFallsBackToConnect(t *testing.T) {
+	repo := &fakeRepo{remoteEmpty: false}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{
+		installed: true, authed: true,
+		exists: true, existsFlip: true, url: "https://github.com/me/mison-env.git",
+		createErr: errors.New("name already exists on this account"),
+	}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() must fall back to connect on create race, got: %v", err)
+	}
+	if len(repo.connected) != 1 || repo.connected[0] != "https://github.com/me/mison-env.git" {
+		t.Fatalf("must connect to the raced repo, connected: %v", repo.connected)
 	}
 }
