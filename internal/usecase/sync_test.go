@@ -610,3 +610,25 @@ func TestSaveConfigStampsSchemaInFlows(t *testing.T) {
 		t.Fatalf("flows must stamp the schema on save:\n%s", toml)
 	}
 }
+
+func TestSmartPullFastForwardChecksOutLock(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	b := newClone(t, remote, "b")
+
+	writeToml(t, a, "[tools]\nnode = \"22\"\n")
+	if err := os.WriteFile(filepath.Join(a.Dir(), "mise.lock"), []byte("# lock v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, a.Dir(), "add", "-A")
+	git(t, a.Dir(), "commit", "-m", "install: node + lock")
+	git(t, a.Dir(), "push", "origin", "HEAD:main")
+
+	if _, err := b.SmartPull(keepLocal); err != nil {
+		t.Fatalf("SmartPull() error = %v", err)
+	}
+	lock, err := os.ReadFile(filepath.Join(b.Dir(), "mise.lock"))
+	if err != nil || string(lock) != "# lock v1\n" {
+		t.Fatalf("remote lock must be checked out: %v %q", err, lock)
+	}
+}
