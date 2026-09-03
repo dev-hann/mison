@@ -165,6 +165,7 @@ PlanSync four-way:
 | Edge case | Behavior | Test |
 |---|---|---|
 | mixed states | ✓ installed / ✗ missing (sync hint) / ⚠ mismatch | TestRunStatusRendersStates |
+| declaration contains path-backed tools | warn: machine-local, listed with paths (status + sync apply) | TestStatusWarnsPathBackedTools |
 | remote ahead | "↻ remote has new tools (x, y) — run mison sync" | TestSyncStatusBehind |
 | local unpushed | ⚠ "local changes not pushed" | TestSyncStatusAhead |
 | both changed | ⚠ "diverged" | TestSyncStatusDiverged |

@@ -86,8 +86,9 @@ mison status                  # compare declaration vs installed (✓ ✗ ⚠)
   (`~/.mison/config.toml`) holds a single env repo; juggling work and
   personal environments means re-binding with `mison init --repo`.
 - **Non-portable tools** — `path:` and other local-backed tools
-  reference machine-local paths; synced to a machine without them they
-  fail on every `mison sync` until uninstalled.
+  reference machine-local paths; mison warns whenever the declaration
+  contains one, and they fail on machines where the path doesn't exist
+  until uninstalled.
 - **No concurrent runs on one machine** — a second concurrent mison
   command refuses to start (run mutex). Run them sequentially.
 - **Air-gapped machines** — first setup and seeding need network
