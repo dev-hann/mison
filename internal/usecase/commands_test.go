@@ -1366,3 +1366,88 @@ func TestStatusNoWarningWithoutPathTools(t *testing.T) {
 		t.Fatalf("registry-only declarations must not warn:\n%s", out.String())
 	}
 }
+
+func TestInitActivatesShell(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Shell = "/bin/zsh"
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	rc := filepath.Join(f.Home, ".zshrc")
+	data, err := os.ReadFile(rc)
+	if err != nil || !strings.Contains(string(data), "mise activate zsh") {
+		t.Fatalf("rc must gain the activation block: %v %q", err, data)
+	}
+	if !strings.Contains(out.String(), "Added mise activation") {
+		t.Fatalf("output must report the addition:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "exec zsh") {
+		t.Fatalf("epilogue must offer exec zsh:\n%s", out.String())
+	}
+}
+
+func TestInitShellActivationIdempotent(t *testing.T) {
+	f, _, _ := newTestFlows(t)
+	f.Shell = "/bin/zsh"
+	for i := 0; i < 2; i++ {
+		if err := f.RunInit(DefaultRepoName); err != nil {
+			t.Fatalf("RunInit() #%d error = %v", i, err)
+		}
+	}
+	data, _ := os.ReadFile(filepath.Join(f.Home, ".zshrc"))
+	if got := strings.Count(string(data), "mise activate zsh"); got != 1 {
+		t.Fatalf("activation block must appear once, got %d:\n%s", got, data)
+	}
+}
+
+func TestInitSkipsActivationWhenAlreadyWired(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Shell = "/bin/zsh"
+	rc := filepath.Join(f.Home, ".zshrc")
+	if err := os.WriteFile(rc, []byte("eval \"$(mise activate zsh)\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	data, _ := os.ReadFile(rc)
+	if len(data) != len("eval \"$(mise activate zsh)\"\n") {
+		t.Fatalf("already-activated rc must stay untouched:\n%s", data)
+	}
+	if strings.Contains(out.String(), "Added mise activation") {
+		t.Fatalf("no addition report expected:\n%s", out.String())
+	}
+}
+
+func TestInitUnknownShellPrintsHintOnly(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Shell = "/usr/bin/fish"
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "Add mise to your shell") {
+		t.Fatalf("unknown shell must get a manual hint:\n%s", out.String())
+	}
+	if entries, _ := filepath.Glob(filepath.Join(f.Home, ".*rc*")); len(entries) > 0 {
+		t.Fatalf("unknown shell must not write rc files: %v", entries)
+	}
+}
+
+func TestInitNoShellSetupSkips(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Shell = "/bin/zsh"
+	f.NoShellSetup = true
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.Home, ".zshrc")); !os.IsNotExist(err) {
+		t.Fatal("--no-shell-setup must not touch rc files")
+	}
+	if strings.Contains(out.String(), "Add mise to your shell") {
+		t.Fatalf("opt-out must stay silent about shell setup:\n%s", out.String())
+	}
+}

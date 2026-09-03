@@ -78,6 +78,11 @@ type Flows struct {
 	Look detector.LookPathFunc
 	Git  func(dir string) EnvRepoIface
 	Gh   GhClient
+	// Shell overrides $SHELL for shell-activation wiring (tests);
+	// empty means detect from the environment.
+	Shell string
+	// NoShellSetup disables rc-file modification (--no-shell-setup).
+	NoShellSetup bool
 }
 
 // MiseRepoIface is the mise surface flows depend on.
@@ -136,6 +141,50 @@ func (f *Flows) activeTools() ([]env.Tool, error) {
 		return nil, err
 	}
 	return ActiveTools(entries), nil
+}
+
+// shellName resolves the user's shell ("zsh", "bash", or "").
+func (f *Flows) shellName() string {
+	sh := f.Shell
+	if sh == "" {
+		sh = os.Getenv("SHELL")
+	}
+	switch {
+	case strings.Contains(sh, "zsh"):
+		return "zsh"
+	case strings.Contains(sh, "bash"):
+		return "bash"
+	}
+	return ""
+}
+
+// ensureShellActivation wires mise into the user's shell rc (the
+// nvm-installer pattern): auto-append a marked block, idempotently —
+// machines that already activate mise (e.g. brew users) are left
+// untouched. Unknown shells get a manual hint only. A child process
+// cannot modify the parent shell's environment, so the flow ends by
+// telling the user to run `exec <shell>` (or open a new terminal).
+func (f *Flows) ensureShellActivation() {
+	if f.NoShellSetup {
+		return
+	}
+	name := f.shellName()
+	if name == "" {
+		f.UI.Line("Add mise to your shell:  echo 'eval \"$(~/.local/bin/mise activate <shell>)\"' >> ~/.<shell>rc")
+		return
+	}
+	rc := filepath.Join(f.Home, "."+name+"rc")
+	data, _ := os.ReadFile(rc)
+	content := string(data)
+	if strings.Contains(content, "mise activate") || strings.Contains(content, "mise/shims") {
+		return
+	}
+	block := "\n# mison: mise activation\neval \"$(~/.local/bin/mise activate " + name + ")\"\n"
+	if err := os.WriteFile(rc, []byte(content+block), 0o644); err != nil {
+		f.UI.Warn("could not add mise activation to "+rc+" ("+err.Error()+")")
+		return
+	}
+	f.UI.Step("Added mise activation to " + rc)
 }
 
 func (f *Flows) ensureMise() error {
@@ -668,6 +717,7 @@ func (f *Flows) RunInit(repoName string) error {
 	if err := f.ensureMise(); err != nil {
 		return err
 	}
+	f.ensureShellActivation()
 
 	if err := f.ensureGh(); err != nil {
 		return err
@@ -698,6 +748,9 @@ func (f *Flows) RunInit(repoName string) error {
 		}
 	}
 	r.Step("Environment ready")
+	if name := f.shellName(); name != "" && !f.NoShellSetup {
+		r.Line("Run `exec " + name + "` (or open a new terminal) to use your tools")
+	}
 	return nil
 }
 
