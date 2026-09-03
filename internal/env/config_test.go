@@ -111,3 +111,27 @@ node = 22
 		t.Fatal("Parse() expected error for non-string version")
 	}
 }
+
+func TestParsePathBackedEntryWithoutVersion(t *testing.T) {
+	src := `[tools]
+[tools.local-cli]
+path = "/Users/me/dev/local-cli"
+`
+	c, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("path-backed entries must parse without version: %v", err)
+	}
+	tools := c.Tools()
+	if len(tools) != 1 || tools[0].Name != "local-cli" || tools[0].PathBackend() == "" {
+		t.Fatalf("unexpected tools: %+v", tools)
+	}
+}
+
+func TestDiffEmptyVersionNeverMismatches(t *testing.T) {
+	declared := []Tool{{Name: "local-cli", Options: map[string]any{"path": "/p"}}}
+	installed := []Tool{{Name: "local-cli", Version: "0.3.0-built"}}
+	st := Diff(declared, installed)
+	if len(st) != 1 || st[0].State != StateOK {
+		t.Fatalf("path-backed (versionless) tool must compare OK, got %+v", st)
+	}
+}

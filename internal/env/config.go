@@ -74,8 +74,13 @@ func toTool(name string, v any) (Tool, error) {
 		return Tool{Name: name, Version: t}, nil
 	case map[string]any:
 		version, _ := t["version"].(string)
+		// path-backed entries have no version (mise forbids both) —
+		// the path IS the source; rejecting them would brick the whole
+		// declaration on a valid mise config
 		if version == "" {
-			return Tool{}, fmt.Errorf("parse mise.toml: tool %q: missing version", name)
+			if _, hasPath := t["path"]; !hasPath {
+				return Tool{}, fmt.Errorf("parse mise.toml: tool %q: missing version", name)
+			}
 		}
 		opts := map[string]any{}
 		for k, v := range t {

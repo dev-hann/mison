@@ -55,7 +55,9 @@ func Diff(declared []Tool, installed []Tool) []ToolStatus {
 }
 
 func versionsMatch(declared, installed string) bool {
-	if declared == "latest" {
+	// empty declared = path-backed tool (no version of its own) — the
+	// installed build version is mise's domain, never a mismatch
+	if declared == "latest" || declared == "" {
 		return true
 	}
 	return installed == declared || strings.HasPrefix(installed, declared+".")
