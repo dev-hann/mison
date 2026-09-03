@@ -76,7 +76,8 @@ func TestLockGlobalDeterministic(t *testing.T) {
 	home := t.TempDir()
 	envDir := filepath.Join(home, ".mison", "env")
 	cfgDir := filepath.Join(home, ".config", "mise")
-	for _, d := range []string{envDir, cfgDir} {
+	work := filepath.Join(home, "work")
+	for _, d := range []string{envDir, cfgDir, filepath.Join(home, ".local", "share", "mise"), work} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +86,8 @@ func TestLockGlobalDeterministic(t *testing.T) {
 	if err := os.WriteFile(toml, []byte("[tools]\njq = \"latest\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(toml, filepath.Join(cfgDir, "config.toml")); err != nil {
+	globalConfig := filepath.Join(cfgDir, "config.toml")
+	if err := os.Symlink(toml, globalConfig); err != nil {
 		t.Fatal(err)
 	}
 	globalLock := filepath.Join(cfgDir, "mise.lock")
@@ -94,9 +96,27 @@ func TestLockGlobalDeterministic(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// mise does not fully honor $HOME on macOS (its migrate scan reads
+	// the OS-home default config regardless), so isolate every root via
+	// the documented env contract and whitelist the OS-home default
+	// config path — otherwise a mison-dogfooding machine's real config
+	// leaks into the isolated run as untrusted and fails it.
+	realHome, _ := os.UserHomeDir()
+	cmdEnv := []string{
+		"HOME=" + home,
+		"PATH=" + os.Getenv("PATH"),
+		"MISE_GLOBAL_CONFIG_FILE=" + globalConfig,
+		"MISE_GLOBAL_CONFIG_ROOT=" + home,
+		"MISE_DATA_DIR=" + filepath.Join(home, ".local", "share", "mise"),
+		"MISE_CACHE_DIR=" + filepath.Join(home, ".cache", "mise"),
+		"MISE_TRUSTED_CONFIG_PATHS=" + globalConfig + ":" + filepath.Join(realHome, ".config", "mise", "config.toml"),
+		"MISE_CEILING_PATHS=" + home,
+	}
+
 	lock := func() string {
 		cmd := exec.Command(miseBin, "lock", "--global")
-		cmd.Env = []string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}
+		cmd.Dir = work
+		cmd.Env = cmdEnv
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("mise lock: %v\n%s", err, out)
 		}

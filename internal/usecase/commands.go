@@ -181,7 +181,7 @@ func (f *Flows) ensureShellActivation() {
 	}
 	block := "\n# mison: mise activation\neval \"$(~/.local/bin/mise activate " + name + ")\"\n"
 	if err := os.WriteFile(rc, []byte(content+block), 0o644); err != nil {
-		f.UI.Warn("could not add mise activation to "+rc+" ("+err.Error()+")")
+		f.UI.Warn("could not add mise activation to " + rc + " (" + err.Error() + ")")
 		return
 	}
 	f.UI.Step("Added mise activation to " + rc)
