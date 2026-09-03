@@ -404,7 +404,8 @@ func ActiveTools(entries []miserepo.Entry) []env.Tool {
 // OwnedTools filters raw mise entries down to the active tools declared
 // by mison's own config (the global symlink or the ~/.mison/env
 // declaration). Project configs and foreign globals are excluded.
-func OwnedTools(entries []miserepo.Entry, home string) []env.Tool {	ours := ownedPaths(home)
+func OwnedTools(entries []miserepo.Entry, home string) []env.Tool {
+	ours := ownedPaths(home)
 	seen := map[string]bool{}
 	var tools []env.Tool
 	for _, e := range entries {
