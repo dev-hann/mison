@@ -133,6 +133,15 @@ their auto-push; sync/init regenerate after applying and push a
 warn-and-defer, never blocking). Lock regeneration is skipped on
 no-op syncs to avoid pointless registry round-trips.
 
+Correction after live verification (mise 2026.9.1): `mise lock
+--global` writes via atomic rename and REPLACES the symlink with a
+regular file — the lock never reached the env repo through the link.
+`Flows.refreshLock` therefore adopts the freshly written content into
+the env repo and restores the symlink after every regeneration. The
+env repo remains the single source of truth. Regeneration is
+byte-deterministic across runs on identical state (e2e-verified), so
+cross-machine convergence holds.
+
 Live-researched against mise 2026.8 (`mise lock --global` on a real env):
 
 **Facts observed**

@@ -18,6 +18,8 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 ~/.config/mise/mise.lock symlink → env repo lockfile   TestEnsureSymlinksGlobalLock
 standalone mise user's real config/lock replaced       backed up to <name>.mison-bak
                                                         TestEnsureReplacesForeignFile/LockFile
+second concurrent run on this machine                  refused (flock run mutex, kernel-released)
+                                                        TestConcurrentRunGuarded
 ```
 
 ## mison init
@@ -144,6 +146,8 @@ PlanSync four-way:
 | orphan removal declined | "kept" notice + --prune hint | TestSyncOrphanDeclinedKeepsTools |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
 | lockfile after apply | regenerated; changed content → "mison: refresh lock" push; no-op sync skips regen | TestSyncPushesRefreshedLock, TestSyncSkipsLockPushWhenUnchanged |
+| mise lock clobbers the global symlink | content adopted into env repo, symlink restored (env repo = single truth) | TestInstallRefreshesLockBeforePush (fake mimics rename-clobber) |
+| lock regeneration determinism | byte-identical across runs on same state (real mise) | e2e TestLockGlobalDeterministic |
 | remote lock checkout | FastForward reset brings remote's mise.lock into the worktree | TestSmartPullFastForwardChecksOutLock |
 | nothing to commit | clean tree → commit skipped | TestSmartPushSkipsEmptyCommit |
 | partially applied state (failed prior sync) | always re-diff → reinstall (idempotent repair) | TestRunSyncAppliesMissing, TestRunSyncWarnsStillMissing |
@@ -189,3 +193,5 @@ PlanSync four-way:
 | damaged .git directory | error propagates; no recovery guidance |
 | very large declarations (hundreds of tools) | unmeasured; currently linear |
 | install failure blocks whole sync (bad tool) | error now hints `mison uninstall <tool>`; per-tool isolation deferred |
+| same-machine concurrent runs | SOLVED — flock run mutex (TestConcurrentRunGuarded) |
+| lock determinism / clobbered symlink | SOLVED — adoption + e2e verification (TestLockGlobalDeterministic) |

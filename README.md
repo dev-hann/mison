@@ -78,6 +78,21 @@ mison status                  # compare declaration vs installed (✓ ✗ ⚠)
 - Tools that vanished from the declaration are detected as orphans and
   removed after a prompt (`--prune` / answer `y`).
 
+## Limitations
+
+- **GitHub.com only** — GitHub Enterprise is not supported (auth and
+  repo URLs hardcode `github.com`).
+- **One environment per machine** — the local binding
+  (`~/.mison/config.toml`) holds a single env repo; juggling work and
+  personal environments means re-binding with `mison init --repo`.
+- **Non-portable tools** — `path:` and other local-backed tools
+  reference machine-local paths; synced to a machine without them they
+  fail on every `mison sync` until uninstalled.
+- **No concurrent runs on one machine** — a second concurrent mison
+  command refuses to start (run mutex). Run them sequentially.
+- **Air-gapped machines** — first setup and seeding need network
+  access; afterwards offline deferral applies.
+
 ## Design
 
 See [docs/DESIGN.md](docs/DESIGN.md) for behavior specifications (sync
