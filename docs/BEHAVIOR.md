@@ -1,6 +1,6 @@
 # Mison Behavior Reference — Command Flows, Edge Cases, Test Map
 
-Living reference generated from the codebase (v0.2.x). Use it to
+Living reference generated from the codebase (v0.3.x). Use it to
 answer "what happens when X?" without reading code. When behavior
 changes, update this file in the same commit.
 
