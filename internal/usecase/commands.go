@@ -519,7 +519,10 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		r.Warn("kept (run mison sync --prune to remove automatically)")
 	}
 
-	if f.refreshLock() {
+	// lock is derived from the declaration: regenerate only when the
+	// declaration was applied here (skip the registry round-trip on
+	// no-op syncs), then push when the content actually changed
+	if needsApply && f.refreshLock() {
 		r.Step("Refreshing lockfile")
 		if err := f.commitAndPush("mison: refresh lock", policy); err != nil {
 			return err

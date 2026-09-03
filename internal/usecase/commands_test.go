@@ -986,6 +986,10 @@ func TestSyncPushesRefreshedLock(t *testing.T) {
 	if _, err := f.layout().Ensure(); err != nil {
 		t.Fatal(err)
 	}
+	// a declared-but-missing tool forces the apply path
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\nnode = \"22\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	fm.lockResult = "# lock v2\n"
 
 	if err := f.RunSync(false, PolicyAsk); err != nil {
