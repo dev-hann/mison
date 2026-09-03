@@ -77,17 +77,41 @@ func toTool(name string, v any) (Tool, error) {
 		if version == "" {
 			return Tool{}, fmt.Errorf("parse mise.toml: tool %q: missing version", name)
 		}
-		return Tool{Name: name, Version: version, OS: toStrings(t["os"])}, nil
+		opts := map[string]any{}
+		for k, v := range t {
+			if k != "version" && k != "os" {
+				opts[k] = v
+			}
+		}
+		return Tool{Name: name, Version: version, OS: toStrings(t["os"]), Options: opts}, nil
 	default:
 		return Tool{}, fmt.Errorf("parse mise.toml: tool %q: invalid entry type %T", name, v)
 	}
 }
 
-// SetTool adds or updates a tool in the [tools] table, preserving any
-// options (postinstall, depends, ...) already present on the entry.
-// A bare-string entry with no options stays a bare string.
+// SetTool adds or updates a tool in the [tools] table. A nil Options
+// preserves any options (postinstall, depends, ...) already present on
+// the entry; non-nil Options replaces them exactly — used by the merge
+// path so the winning side's entry lands as-is. A bare-string entry
+// with no options stays a bare string.
 func (c *Config) SetTool(t Tool) {
 	table := c.toolsTable()
+	if t.Options != nil {
+		entry := map[string]any{}
+		for k, v := range t.Options {
+			entry[k] = v
+		}
+		entry["version"] = t.Version
+		if len(t.OS) > 0 {
+			entry["os"] = toAny(t.OS)
+		}
+		if len(entry) == 1 {
+			table[t.Name] = t.Version
+		} else {
+			table[t.Name] = entry
+		}
+		return
+	}
 	existing, ok := table[t.Name]
 	if !ok {
 		if len(t.OS) == 0 {

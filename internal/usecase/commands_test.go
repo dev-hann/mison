@@ -3,6 +3,7 @@ package usecase
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,8 @@ type fakeMise struct {
 	execCalls   []string
 	installDone bool
 	execErr     error
+	listErr     error
+	execFailArg string
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -42,10 +45,17 @@ func (f *fakeMise) Exec(args ...string) error {
 	if f.execErr != nil {
 		return f.execErr
 	}
-	f.execCalls = append(f.execCalls, strings.Join(args, " "))
+	joined := strings.Join(args, " ")
+	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
+		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
+	}
+	f.execCalls = append(f.execCalls, joined)
 	return nil
 }
 func (f *fakeMise) ListInstalled() ([]miserepo.Entry, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.extra, nil
 }
 
@@ -57,6 +67,7 @@ type fakeRepo struct {
 	pushes      []string
 	pulls       int
 	pushErr     error
+	pullErr     error
 	mergedOn    []string
 	connected   []string
 	remoteEmpty bool
@@ -86,6 +97,9 @@ func (f *fakeRepo) SmartPush(message string, resolve Resolver) ([]string, error)
 	return f.mergedOn, nil
 }
 func (f *fakeRepo) SmartPull(_ Resolver) ([]string, error) {
+	if f.pullErr != nil {
+		return nil, f.pullErr
+	}
 	f.pulls++
 	return f.mergedOn, nil
 }
@@ -106,15 +120,29 @@ type fakeGh struct {
 	created   []string
 	exists    bool
 	url       string
+	createErr error
+	// existsFlip: when set, the first RepoExists call returns false and
+	// later calls return exists — simulates a create race.
+	existsFlip bool
+	existsSeen int
 }
 
-func (f *fakeGh) IsInstalled() bool              { return f.installed }
-func (f *fakeGh) AuthStatus() bool               { return f.authed }
-func (f *fakeGh) AuthLogin() error               { f.authed = true; return nil }
-func (f *fakeGh) SetupGit() error                { return nil }
-func (f *fakeGh) RepoExists(string) bool         { return f.exists }
+func (f *fakeGh) IsInstalled() bool { return f.installed }
+func (f *fakeGh) AuthStatus() bool  { return f.authed }
+func (f *fakeGh) AuthLogin() error  { f.authed = true; return nil }
+func (f *fakeGh) SetupGit() error   { return nil }
+func (f *fakeGh) RepoExists(string) bool {
+	f.existsSeen++
+	if f.existsFlip && f.existsSeen == 1 {
+		return false
+	}
+	return f.exists
+}
 func (f *fakeGh) RepoURL(string) (string, error) { return f.url, nil }
 func (f *fakeGh) CreatePrivateRepo(name string) (string, error) {
+	if f.createErr != nil {
+		return "", f.createErr
+	}
 	f.created = append(f.created, name)
 	return "https://github.com/me/" + name + ".git", nil
 }
@@ -784,5 +812,114 @@ func TestRunInitDoesNotWriteReadme(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.Home, ".mison", "env", "README.md")); !os.IsNotExist(err) {
 		t.Errorf("README.md must not be created: %v", err)
+	}
+}
+
+func TestInstallFutureSchemaPushIsFatal(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: fmt.Errorf("parse origin/main:mise.toml: %w", env.ErrFutureSchema)}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	err := f.RunInstall([]string{"node"}, "", PolicyAsk)
+	if err == nil {
+		t.Fatal("RunInstall must propagate future-schema push failure")
+	}
+	if !strings.Contains(out.String(), "✗") {
+		t.Fatal("must report via Fail port (✗)")
+	}
+	if strings.Contains(out.String(), "will retry on next sync") {
+		t.Fatal("future-schema must not be deferred to next sync")
+	}
+}
+
+func TestSyncFutureSchemaPullIsFatal(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pullErr: fmt.Errorf("parse origin/main:mise.toml: %w", env.ErrFutureSchema)}
+	f, _, _ := newTestFlowsWith(t, repo)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunSync(false, PolicyAsk); err == nil {
+		t.Fatal("RunSync must abort on future-schema remote")
+	} else if !errors.Is(err, env.ErrFutureSchema) {
+		t.Fatalf("error must wrap ErrFutureSchema, got: %v", err)
+	}
+}
+
+func TestRunInitExplicitFlagWinsOverPersisted(t *testing.T) {
+	repo := &fakeRepo{}
+	f, _, _ := newTestFlowsWith(t, repo)
+
+	// a different name persisted from a previous init
+	cfgDir := filepath.Join(f.Home, ".mison")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte("# managed by mison\nrepo = \"other-env\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunInit("mison-env"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.connected) > 0 || repo.remote != "https://github.com/me/mison-env.git" {
+		t.Fatalf("explicit flag must win, connected=%v remote=%v", repo.connected, repo.remote)
+	}
+	persisted, err := os.ReadFile(filepath.Join(cfgDir, "config.toml"))
+	if err != nil || !strings.Contains(string(persisted), "mison-env") {
+		t.Fatalf("flag choice must be persisted: %v %q", err, persisted)
+	}
+}
+
+func TestVerifyWarnsWhenListFails(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	fm.listErr = errors.New("mise ls broke")
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "could not verify installation") {
+		t.Fatalf("list failure must warn, output:\n%s", out.String())
+	}
+}
+
+func TestSyncPruneContinuesPastFailures(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// two orphans: jq sorts first and fails; node must still be attempted
+	fm.setInstalled("node", "22", "jq", "1.7")
+	fm.execFailArg = "jq"
+
+	err := f.RunSync(true, PolicyAsk) // --prune: unattended
+	if err == nil || !strings.Contains(err.Error(), "jq") {
+		t.Fatalf("RunSync() must report the failed prune, got: %v", err)
+	}
+	// node must still have been pruned after jq failed
+	attempted := false
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "node") {
+			attempted = true
+		}
+	}
+	if !attempted {
+		t.Fatalf("prune must continue past failures, execCalls: %v", fm.execCalls)
+	}
+}
+
+func TestRunInitCreateRaceFallsBackToConnect(t *testing.T) {
+	repo := &fakeRepo{remoteEmpty: false}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{
+		installed: true, authed: true,
+		exists: true, existsFlip: true, url: "https://github.com/me/mison-env.git",
+		createErr: errors.New("name already exists on this account"),
+	}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() must fall back to connect on create race, got: %v", err)
+	}
+	if len(repo.connected) != 1 || repo.connected[0] != "https://github.com/me/mison-env.git" {
+		t.Fatalf("must connect to the raced repo, connected: %v", repo.connected)
 	}
 }

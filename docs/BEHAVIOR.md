@@ -41,12 +41,15 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 |---|---|---|
 | gh entirely missing | installed via mise, declared, authenticated — full chain | TestRunInitGhNotInstalledFlow |
 | second machine (repo exists) | Connect instead of create | TestRunInitSecondMachineConnectsExistingRepo |
+| create race (repo appears between check and create) | create fails → re-check → Connect | TestRunInitCreateRaceFallsBackToConnect |
 | remote repo exists but empty | Connect then seed push | TestRunInitExistingEmptyRepoSeedsInitialPush |
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |
+| explicit --repo flag vs persisted name | flag wins and is re-persisted | TestRunInitExplicitFlagWinsOverPersisted |
 | machine without git identity | repo-local mison@local fallback | TestSmartPushWithoutGitIdentity |
 | Connect target dir already has files | init+fetch+reset (not clone) | TestConnectFreshDir |
+| remote uses future schema | Connect refuses before reset; worktree untouched | TestConnectRejectsFutureSchemaRemote |
 
 ## mison install <tools...> [--mac/--linux] [--ours/--theirs]
 
@@ -66,6 +69,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | OS restriction doesn't match machine | declared, install skipped + notice | TestRunInstallWarnsOSSkip |
 | mise install silent no-op (broken symlink) | post-check warns | TestRunInstallWarnsStillMissing |
 | push fails (offline) | warn-and-defer to next sync, command succeeds | TestInstallDeferredPushOnFailure |
+| future-schema remote at push | fatal: Fail port, non-zero exit (no defer) | TestInstallFutureSchemaPushIsFatal |
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
 | existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
 | multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
@@ -127,7 +131,9 @@ PlanSync four-way:
 | offline deferred commits (ahead) | sync pushes pending after pull | TestSyncPullsBeforeApply |
 | future-schema remote | rejected BEFORE any reset/push; worktree untouched | TestSmartPullRejectsFutureSchemaWithoutTouchingWorktree, TestSmartPushRefusesToPushOntoFutureSchemaRemote |
 | pull network failure | warn, continue with local declaration | RunSync warn-and-continue (observed in live e2e) |
+| future-schema remote at pull | fatal: hard error, sync aborted | TestSyncFutureSchemaPullIsFatal |
 | orphans present | prompt → remove on approval / --prune unattended | TestRunSyncPruneRemovesOrphans |
+| prune failure mid-list | remaining orphans still attempted; partial failure reported | TestSyncPruneContinuesPastFailures |
 | orphan removal declined | "kept" notice + --prune hint | (symmetric path of the prune test) |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
 | nothing to commit | clean tree → commit skipped | TestSmartPushSkipsEmptyCommit |
@@ -161,6 +167,9 @@ PlanSync four-way:
 | unknown sections ([env]/[tasks]) | preserved on rewrite | TestBytesPreservesUnknownSections |
 | os flag conversion (`--mac=arm64`) | normalized to `macos/arm64`; invalid → nil | TestParseOSSpec, TestParseOSSpecInvalid, TestAppliesTo |
 | OS-restricted tools in merge | os arrays are 3-way merged too | TestMergeOSEntryChange, TestMergeOSConflict |
+| option-only edit (postinstall, one side) | taken from the changed side — never silently dropped | TestMergeOptionOnlyRemoteEditTaken |
+| option-only edit, both sides differ | promoted to conflict | TestMergeOptionBothChangedDifferentlyConflicts |
+| merge winner applied to entry | non-nil Options = exact replace; nil = preserve existing | TestSetToolExactOptionsReplace, TestSetToolNilOptionsPreservesExisting |
 
 ## Known gaps (honest list — candidates, not commitments)
 

@@ -1,6 +1,13 @@
 package env
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrFutureSchema marks declarations written by a newer mison. Flows
+// treat it as fatal (upgrade hint), never as warn-and-defer.
+var ErrFutureSchema = errors.New("declaration uses a newer schema")
 
 // SchemaVersion is the declaration format version this mison writes
 // and understands. Bump ONLY on incompatible changes to how mison
@@ -60,9 +67,8 @@ func checkSchema(data map[string]any) error {
 		return nil // unparsable → treat as unknown/legacy, don't block
 	}
 	if schema > SchemaVersion {
-		return fmt.Errorf(
-			"declaration uses schema %d, this mison supports %d — upgrade mison",
-			schema, SchemaVersion)
+		return fmt.Errorf("%w: schema %d, this mison supports %d — upgrade mison",
+			ErrFutureSchema, schema, SchemaVersion)
 	}
 	return nil
 }

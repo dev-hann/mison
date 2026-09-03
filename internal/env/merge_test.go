@@ -157,3 +157,26 @@ func TestMergeOSConflict(t *testing.T) {
 		t.Fatalf("conflicts = %+v, want docker", conflicts)
 	}
 }
+
+func TestMergeOptionOnlyRemoteEditTaken(t *testing.T) {
+	base := []Tool{{Name: "node", Version: "22"}}
+	local := []Tool{{Name: "node", Version: "22"}}
+	remote := []Tool{{Name: "node", Version: "22", Options: map[string]any{"postinstall": "echo hi"}}}
+	merged, conflicts := Merge(base, local, remote)
+	if len(conflicts) != 0 {
+		t.Fatalf("unexpected conflicts: %+v", conflicts)
+	}
+	if len(merged) != 1 || merged[0].Options["postinstall"] != "echo hi" {
+		t.Fatalf("remote option edit must be taken, got %+v", merged)
+	}
+}
+
+func TestMergeOptionBothChangedDifferentlyConflicts(t *testing.T) {
+	base := []Tool{{Name: "node", Version: "22"}}
+	local := []Tool{{Name: "node", Version: "22", Options: map[string]any{"postinstall": "a"}}}
+	remote := []Tool{{Name: "node", Version: "22", Options: map[string]any{"postinstall": "b"}}}
+	_, conflicts := Merge(base, local, remote)
+	if len(conflicts) != 1 || conflicts[0].Name != "node" {
+		t.Fatalf("option-only divergence must conflict, got %+v", conflicts)
+	}
+}

@@ -363,6 +363,34 @@ func TestConnectFreshDir(t *testing.T) {
 	}
 }
 
+func TestConnectRejectsFutureSchemaRemote(t *testing.T) {
+	remote := newBareRemote(t)
+	a := newClone(t, remote, "a")
+	writeToml(t, a, "[_.mison]\nschema = 2\n\n[tools]\nnode = \"22\"\n")
+	git(t, a.Dir(), "add", "-A")
+	git(t, a.Dir(), "commit", "-m", "future schema")
+	git(t, a.Dir(), "push", "origin", "HEAD:main")
+
+	// fresh-machine dir with local content that must survive
+	dir := filepath.Join(t.TempDir(), "env")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "mise.toml"), []byte("[tools]\njq = \"latest\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := newEngineAt(dir)
+
+	err := g.Connect(remote)
+	if err == nil || !strings.Contains(err.Error(), "upgrade mison") {
+		t.Fatalf("Connect() error = %v, want schema guard error", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "mise.toml"))
+	if !strings.Contains(string(data), "jq") || strings.Contains(string(data), "node") {
+		t.Fatalf("worktree must be untouched by the guard:\n%s", data)
+	}
+}
+
 func TestSmartPushWithoutGitIdentity(t *testing.T) {
 	remote := newBareRemote(t)
 	g := newCloneBare(t, remote, "b")

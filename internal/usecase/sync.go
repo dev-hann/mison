@@ -124,6 +124,11 @@ func (e *Engine) Connect(url string) error {
 	if e.RemoteIsEmpty() {
 		return nil
 	}
+	// schema guard: parse the remote declaration BEFORE any reset so a
+	// newer-schema remote never touches the worktree (DESIGN #14)
+	if _, err := e.configAt("origin/main"); err != nil {
+		return err
+	}
 	return e.git.ResetHard("origin/main")
 }
 

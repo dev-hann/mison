@@ -1,6 +1,7 @@
 package env
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -18,6 +19,19 @@ node = "22"
 	}
 	if !strings.Contains(err.Error(), "upgrade mison") {
 		t.Fatalf("error should tell the user to upgrade: %v", err)
+	}
+}
+
+func TestFutureSchemaErrorIsSentinel(t *testing.T) {
+	_, err := Parse([]byte("[_.mison]\nschema = 2\n"))
+	if err == nil {
+		t.Fatal("Parse() expected error for future schema")
+	}
+	if !errors.Is(err, ErrFutureSchema) {
+		t.Fatalf("error must wrap ErrFutureSchema, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "upgrade mison") {
+		t.Fatalf("message must keep the upgrade hint, got: %v", err)
 	}
 }
 

@@ -77,3 +77,27 @@ func TestSetToolPlainToStringKeepsSimplicity(t *testing.T) {
 		t.Fatalf("plain tool should stay a string:\n%s", out)
 	}
 }
+
+func TestSetToolExactOptionsReplace(t *testing.T) {
+	c := parseOrDie(t, "[tools]\nnode = { version = \"22\", postinstall = \"old\", os = [\"linux\"] }\n")
+	c.SetTool(Tool{
+		Name: "node", Version: "23",
+		Options: map[string]any{"depends": "['x']"},
+	})
+	out := string(c.mustBytes(t))
+	if !strings.Contains(out, `version = "23"`) || !strings.Contains(out, "depends") {
+		t.Fatalf("winner options must replace: %s", out)
+	}
+	if strings.Contains(out, "postinstall") || strings.Contains(out, "os =") {
+		t.Fatalf("old options must not survive an exact replace: %s", out)
+	}
+}
+
+func TestSetToolNilOptionsPreservesExisting(t *testing.T) {
+	c := parseOrDie(t, "[tools]\nnode = { version = \"22\", postinstall = \"keep\" }\n")
+	c.SetTool(Tool{Name: "node", Version: "23"})
+	out := string(c.mustBytes(t))
+	if !strings.Contains(out, `postinstall = "keep"`) {
+		t.Fatalf("nil Options must preserve existing entry options: %s", out)
+	}
+}

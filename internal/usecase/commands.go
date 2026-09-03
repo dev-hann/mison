@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ func (f *Flows) repoConfigPath() string {
 // resolveRepoName picks the repo name: explicit flag > persisted >
 // default. A successful connection persists the choice.
 func (f *Flows) resolveRepoName(flagged string) string {
-	if flagged != "" && flagged != DefaultRepoName {
+	if flagged != "" {
 		return flagged
 	}
 	if data, err := os.ReadFile(f.repoConfigPath()); err == nil {
@@ -49,7 +50,7 @@ func (f *Flows) resolveRepoName(flagged string) string {
 			}
 		}
 	}
-	return flagged
+	return DefaultRepoName
 }
 
 func (f *Flows) persistRepoName(name string) {
@@ -168,20 +169,26 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 
 // commitAndPush applies the push policy after a declaration change:
 // no repo → skip silently; divergence → reconcile; offline → warn and
-// defer to the next sync.
-func (f *Flows) commitAndPush(message string, policy ConflictPolicy) {
+// defer to the next sync. Future-schema remotes are fatal — the local
+// declaration was saved, but nothing may be reset or pushed.
+func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 	repo := f.envRepo()
 	if !repo.IsRepo() {
-		return
+		return nil
 	}
 	merged, err := repo.SmartPush(message, f.makeResolver(policy))
 	if err != nil {
+		if errors.Is(err, env.ErrFutureSchema) {
+			f.UI.Fail("declaration saved locally — push refused: " + err.Error())
+			return err
+		}
 		f.UI.Warn("could not push — will retry on next sync (" + err.Error() + ")")
-		return
+		return nil
 	}
 	if len(merged) > 0 {
 		f.UI.Synced(fmt.Sprintf("Remote had new changes (%s) — merged automatically", strings.Join(merged, ", ")))
 	}
+	return nil
 }
 
 func tool(name, version string) env.Tool {
@@ -239,8 +246,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 		return err
 	}
 	f.verifyVisible(names, skipped)
-	f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
-	return nil
+	return f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
 }
 
 // verifyVisible warns when tools mison just installed are not reported
@@ -248,6 +254,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
 	installed, err := f.installedTools()
 	if err != nil {
+		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
 	}
 	present := map[string]bool{}
@@ -267,6 +274,7 @@ func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
 func (f *Flows) verifyDeclaredApplied(declared []env.Tool) {
 	installed, err := f.installedTools()
 	if err != nil {
+		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
 	}
 	info := f.detect()
@@ -332,8 +340,7 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 			f.UI.Step(fmt.Sprintf("Removed %s (not installed)", name))
 		}
 	}
-	f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
-	return nil
+	return f.commitAndPush(fmt.Sprintf("uninstall: %s", strings.Join(args, ", ")), policy)
 }
 
 // RunStatus implements the status flow (read-only).
@@ -418,9 +425,12 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	if repo := f.envRepo(); repo.IsRepo() {
 		f.UI.Step("Pulling environment")
 		merged, err := repo.SmartPull(f.makeResolver(policy))
-		if err != nil {
+		switch {
+		case errors.Is(err, env.ErrFutureSchema):
+			return err
+		case err != nil:
 			f.UI.Warn("pull failed — continuing with local declaration (" + err.Error() + ")")
-		} else if len(merged) > 0 {
+		case len(merged) > 0:
 			f.UI.Synced(fmt.Sprintf("New changes: %s", strings.Join(merged, ", ")))
 		}
 	}
@@ -468,25 +478,28 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		r.Step(fmt.Sprintf("Pruning %s", name))
 		return f.Mise.Exec("uninstall", "--all", name)
 	}
+	pruneAll := func() error {
+		var failed []string
+		for _, name := range orphans {
+			if err := removeOrphan(name); err != nil {
+				failed = append(failed, name+": "+err.Error())
+			}
+		}
+		if len(failed) > 0 {
+			return fmt.Errorf("pruned with failures: %s", strings.Join(failed, "; "))
+		}
+		return nil
+	}
 	switch {
 	case len(orphans) == 0:
 		// nothing extra
 	case prune:
-		for _, name := range orphans {
-			if err := removeOrphan(name); err != nil {
-				return err
-			}
-		}
+		return pruneAll()
 	default:
 		if f.Ask.Confirm(fmt.Sprintf("Remove undeclared tools (%s)?", strings.Join(orphans, ", "))) {
-			for _, name := range orphans {
-				if err := removeOrphan(name); err != nil {
-					return err
-				}
-			}
-		} else {
-			r.Warn("kept (run mison sync --prune to remove automatically)")
+			return pruneAll()
 		}
+		r.Warn("kept (run mison sync --prune to remove automatically)")
 	}
 
 	if needsApply || len(orphans) > 0 {
@@ -567,39 +580,50 @@ func (f *Flows) ensureGh() error {
 	return f.Gh.SetupGit()
 }
 
+// connectExisting links to a repo another machine already created:
+// fetch+reset (or seed push when the remote is still empty).
+func (f *Flows) connectExisting(repo EnvRepoIface, repoName string) error {
+	f.UI.Step("Connecting to existing environment repository " + repoName)
+	url, err := f.Gh.RepoURL(repoName)
+	if err != nil {
+		return err
+	}
+	if err := repo.Connect(url); err != nil {
+		return err
+	}
+	if repo.RemoteIsEmpty() {
+		// remote created but never seeded: push the initial state
+		_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
+	}
+	return err
+}
+
 // connectRepo links ~/.mison/env to the GitHub environment repo:
 // local clone → smart pull; remote exists (another machine created it)
 // → connect by fetch+reset; otherwise create the private repo, init
-// git, and push the initial declaration.
+// git, and push the initial declaration. A create race (another
+// machine created the repo between our exists-check and the create)
+// falls back to connecting.
 func (f *Flows) connectRepo(repoName string) error {
-	r := f.UI
 	repo := f.envRepo()
 
 	if repo.IsRepo() && repo.RemoteURL() != "" {
-		r.Step("Connecting environment")
+		f.UI.Step("Connecting environment")
 		_, err := repo.SmartPull(f.makeResolver(PolicyAsk))
 		return err
 	}
 
 	if f.Gh.RepoExists(repoName) {
-		r.Step("Connecting to existing environment repository " + repoName)
-		url, err := f.Gh.RepoURL(repoName)
-		if err != nil {
-			return err
-		}
-		if err := repo.Connect(url); err != nil {
-			return err
-		}
-		if repo.RemoteIsEmpty() {
-			// remote created but never seeded: push the initial state
-			_, err = repo.SmartPush("mison: init environment", f.makeResolver(PolicyAsk))
-		}
-		return err
+		return f.connectExisting(repo, repoName)
 	}
 
-	r.Step("Creating environment repository " + repoName)
+	f.UI.Step("Creating environment repository " + repoName)
 	url, err := f.Gh.CreatePrivateRepo(repoName)
 	if err != nil {
+		if f.Gh.RepoExists(repoName) {
+			// another machine won the create race — connect instead
+			return f.connectExisting(repo, repoName)
+		}
 		return err
 	}
 
