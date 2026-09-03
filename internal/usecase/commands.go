@@ -12,6 +12,7 @@ import (
 
 	"github.com/dev-hann/mison/internal/detector"
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/lockfile"
 	"github.com/dev-hann/mison/internal/paths"
 	"github.com/dev-hann/mison/internal/repo/miserepo"
 	"github.com/dev-hann/mison/internal/ui"
@@ -102,6 +103,13 @@ type EnvRepoIface interface {
 }
 
 func (f *Flows) layout() paths.Layout { return paths.New(f.Home) }
+
+// acquireRunLock refuses to run while another mison process on this
+// machine holds the run lock (prevents git index corruption from two
+// concurrent syncs). Kernel-released: crashed runs never block.
+func (f *Flows) acquireRunLock() (*lockfile.Guard, error) {
+	return lockfile.Acquire(f.layout().RunLock)
+}
 func (f *Flows) detect() detector.Info {
 	return detector.Detect()
 }
@@ -239,6 +247,13 @@ func tool(name, version string) env.Tool {
 // RunInstall implements the install flow: declare tools, apply them,
 // verify visibility, push the declaration.
 func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	osSpec := env.ParseOSSpec(osFlag)
 	if osFlag != "" && osSpec == nil {
 		return fmt.Errorf("invalid OS spec %q (use mac, linux, linux/x64, linux/arm64, macos/arm64)", osFlag)
@@ -336,6 +351,13 @@ func (f *Flows) verifyDeclaredApplied(declared []env.Tool) {
 
 // RunUninstall implements the uninstall flow.
 func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	if !assumeYes && !f.Ask.Confirm(fmt.Sprintf("Remove %s from the environment?", strings.Join(args, ", "))) {
 		return nil
 	}
@@ -456,6 +478,13 @@ func (f *Flows) renderSyncStatus() {
 // RunSync implements the sync flow: pull declaration (when connected),
 // apply it via mise, prune orphans on request.
 func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	if _, err := os.Stat(f.layout().MiseToml); err != nil {
 		return fmt.Errorf("no environment found — run mison init first")
 	}
@@ -576,6 +605,13 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 // mison environment (mise → gh → private env repo → declaration
 // symlink) and install the declared tools.
 func (f *Flows) RunInit(repoName string) error {
+	guard, err := f.acquireRunLock()
+	if err != nil {
+		f.UI.Fail(err.Error())
+		return err
+	}
+	defer guard.Release()
+
 	r := f.UI
 	info := f.detect()
 	r.Step(fmt.Sprintf("Detected %s/%s", info.OS, info.Arch))

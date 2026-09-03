@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dev-hann/mison/internal/env"
+	"github.com/dev-hann/mison/internal/lockfile"
 	"github.com/dev-hann/mison/internal/repo/miserepo"
 )
 
@@ -1248,5 +1249,25 @@ func TestSyncOrphanDeclinedKeepsTools(t *testing.T) {
 		if strings.Contains(c, "uninstall") {
 			t.Fatalf("declined prune must not uninstall, execCalls: %v", fm.execCalls)
 		}
+	}
+}
+
+func TestConcurrentRunGuarded(t *testing.T) {
+	f, _, out := newTestFlows(t)
+
+	// simulate a second terminal already running mison
+	g, err := lockfile.Acquire(f.layout().RunLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err == nil {
+		t.Fatal("RunInstall must refuse while another run holds the lock")
+	} else if !strings.Contains(err.Error(), "another mison") {
+		t.Fatalf("error must explain the lock, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "✗") {
+		t.Fatalf("must report via Fail port:\n%s", out.String())
 	}
 }

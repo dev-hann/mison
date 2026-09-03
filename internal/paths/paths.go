@@ -24,6 +24,7 @@ type Layout struct {
 	MiseLock     string
 	GlobalConfig string
 	GlobalLock   string
+	RunLock      string // run mutex — outside the repo so it never commits
 }
 
 // New resolves the layout under the default XDG config dir.
@@ -44,6 +45,7 @@ func NewEnv(home, xdgConfig string) Layout {
 		MiseLock:     filepath.Join(envDir, "mise.lock"),
 		GlobalConfig: filepath.Join(configDir, "mise", "config.toml"),
 		GlobalLock:   filepath.Join(configDir, "mise", "mise.lock"),
+		RunLock:      filepath.Join(home, ".mison", ".run.lock"),
 	}
 }
 
