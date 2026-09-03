@@ -124,7 +124,14 @@ Principle: hide complexity (git), never hide information (changes).
 | Manual edits | uncommitted mise.toml changes | auto-commit, then diverged path |
 | Partial install | last sync failed mid-way | always re-diff ③, reinstall missing |
 
-## 8. Proposal: mise.lock adoption (design approved → implement next)
+## 8. mise.lock adoption (design approved → implemented)
+
+Implemented: `paths.Ensure` symlinks `~/.config/mise/mise.lock` →
+`~/.mison/env/mise.lock`; install/uninstall refresh the lock before
+their auto-push; sync/init regenerate after applying and push a
+"mison: refresh lock" commit when content changed (registry failures
+warn-and-defer, never blocking). Lock regeneration is skipped on
+no-op syncs to avoid pointless registry round-trips.
 
 Live-researched against mise 2026.8 (`mise lock --global` on a real env):
 

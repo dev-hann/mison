@@ -15,6 +15,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
                                                         TestSmartPullRejectsFutureSchema*
 ~/.mison/env + config symlink ensured (idempotent)     TestEnsureCreatesEnvDirAndFile
                                                         TestEnsureIdempotent
+~/.config/mise/mise.lock symlink → env repo lockfile   TestEnsureSymlinksGlobalLock
 ```
 
 ## mison init
@@ -73,6 +74,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
 | existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
 | multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
+| lockfile refresh after apply | `mise lock --global` before push — same commit; failure warns + defers | TestInstallRefreshesLockBeforePush, TestInstallLockFailureWarnsAndDefers |
 | first machine (no repo connected) | push silently skipped (local-only mode) | TestRunInstallCreatesSymlink (repo-less path) |
 
 ## mison uninstall <tools...> [--yes]
@@ -136,6 +138,8 @@ PlanSync four-way:
 | prune failure mid-list | remaining orphans still attempted; partial failure reported | TestSyncPruneContinuesPastFailures |
 | orphan removal declined | "kept" notice + --prune hint | (symmetric path of the prune test) |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
+| lockfile after apply | regenerated; changed content → "mison: refresh lock" push; no-op sync skips regen | TestSyncPushesRefreshedLock, TestSyncSkipsLockPushWhenUnchanged |
+| remote lock checkout | FastForward reset brings remote's mise.lock into the worktree | TestSmartPullFastForwardChecksOutLock |
 | nothing to commit | clean tree → commit skipped | TestSmartPushSkipsEmptyCommit |
 | partially applied state (failed prior sync) | always re-diff → reinstall (idempotent repair) | TestRunSyncAppliesMissing, TestRunSyncWarnsStillMissing |
 | unrelated histories (manually seeded repo) | base="" → merge path | TestPlanSyncTable row |
