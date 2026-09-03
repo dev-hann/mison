@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install
 Or pin a version:
 
 ```bash
-MISON_VERSION=v0.3.1 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
+MISON_VERSION=v0.3.2 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
 ```
 
 The installer detects your OS/architecture, downloads the release
