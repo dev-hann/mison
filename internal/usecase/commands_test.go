@@ -26,7 +26,12 @@ type fakeMise struct {
 	execFailArg string
 	// lockResult: when set, Exec("lock", "--global") writes it to the
 	// env-dir lockfile — simulates mise's side effect through the symlink.
-	lockResult string
+	// lockResults (when set) supplies DIFFERENT content per successive
+	// lock call (last entry repeats) — simulates a merge clobbering the
+	// lock between regenerations.
+	lockResult  string
+	lockResults []string
+	lockCalls   int
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -52,9 +57,20 @@ func (f *fakeMise) Exec(args ...string) error {
 	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
 		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
 	}
-	if joined == "lock --global" && f.lockResult != "" {
-		if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(f.lockResult), 0o644); err != nil {
-			return err
+	if joined == "lock --global" {
+		content := f.lockResult
+		if len(f.lockResults) > 0 {
+			i := f.lockCalls
+			if i >= len(f.lockResults) {
+				i = len(f.lockResults) - 1
+			}
+			content = f.lockResults[i]
+		}
+		f.lockCalls++
+		if content != "" {
+			if err := os.WriteFile(filepath.Join(f.home, ".mison", "env", "mise.lock"), []byte(content), 0o644); err != nil {
+				return err
+			}
 		}
 	}
 	f.execCalls = append(f.execCalls, joined)
@@ -78,6 +94,7 @@ type fakeRepo struct {
 	pullErr     error
 	mergedOn    []string
 	connected   []string
+	setURLs     []string
 	remoteEmpty bool
 	syncState   SyncState
 	remoteAdded []string
@@ -88,6 +105,11 @@ type fakeRepo struct {
 func (f *fakeRepo) IsRepo() bool { return f.isRepo }
 func (f *fakeRepo) Init() error  { f.isRepo = true; return nil }
 func (f *fakeRepo) RemoteAdd(url string) error {
+	f.remote = url
+	return nil
+}
+func (f *fakeRepo) RemoteSetURL(url string) error {
+	f.setURLs = append(f.setURLs, url)
 	f.remote = url
 	return nil
 }
@@ -385,7 +407,7 @@ func TestRunStatusRendersStates(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"✓ node (22)",
-		"⚠ go (declared 1.25, installed 1.24.0)",
+		"⚠ go (declared 1.25, installed 1.24.0 — run mison sync)",
 		"✗ python (missing",
 	} {
 		if !strings.Contains(got, want) {
@@ -1044,5 +1066,182 @@ func TestRunInitRefreshesLock(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("changed lock must be pushed after init install, pushes: %v", repo.pushes)
+	}
+}
+
+func TestSyncNeverPrunesGh(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	ask := &fakeAsk{confirm: true}
+	f.Ask = ask
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	// gh installed via the bootstrap chain but not declared
+	fm.setInstalled("gh", "2.62.0")
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if len(ask.confirmQs) != 0 {
+		t.Fatalf("gh must never be offered as an orphan: %v", ask.confirmQs)
+	}
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "gh") {
+			t.Fatalf("gh must not be pruned, execCalls: %v", fm.execCalls)
+		}
+	}
+}
+
+func TestPushRegeneratesLockAfterRemoteMerge(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, mergedOn: []string{"node"}}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	// first regen (pre-push) writes v1; the merge resets the worktree to
+	// the remote's lock; the second regen writes v2 — content differs,
+	// so the refresh must be pushed
+	fm.lockResults = []string{"# lock v1", "# lock v2"}
+
+	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	wantPushes := []string{"install: go", "mison: refresh lock"}
+	if len(repo.pushes) != len(wantPushes) {
+		t.Fatalf("pushes = %v, want %v", repo.pushes, wantPushes)
+	}
+	for i := range wantPushes {
+		if repo.pushes[i] != wantPushes[i] {
+			t.Fatalf("pushes = %v, want %v", repo.pushes, wantPushes)
+		}
+	}
+}
+
+func TestPushWithoutMergeSkipsLockRepush(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	fm.lockResult = "# lock v1\n"
+
+	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if len(repo.pushes) != 1 || repo.pushes[0] != "install: go" {
+		t.Fatalf("pushes = %v, want only [install: go]", repo.pushes)
+	}
+}
+
+func TestRunInitRebindsToExplicitRepo(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, remote: "https://github.com/me/old-env.git"}
+	f, _, _ := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true, url: "https://github.com/me/new-env.git"}
+
+	if err := f.RunInit("new-env"); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.setURLs) != 1 || repo.setURLs[0] != "https://github.com/me/new-env.git" {
+		t.Fatalf("explicit flag must re-bind the remote: %v", repo.setURLs)
+	}
+	if repo.pulls != 1 {
+		t.Fatalf("re-bind must be followed by a pull, pulls = %d", repo.pulls)
+	}
+}
+
+func TestRunInitNoRebindWithoutFlag(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, remote: "https://github.com/me/old-env.git"}
+	f, _, _ := newTestFlowsWith(t, repo)
+
+	if err := f.RunInit(""); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	if len(repo.setURLs) != 0 {
+		t.Fatalf("no flag → no re-bind, setURLs: %v", repo.setURLs)
+	}
+	if repo.pulls != 1 {
+		t.Fatalf("existing remote must still pull, pulls = %d", repo.pulls)
+	}
+}
+
+func TestInstallFailureHintsRemoval(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	fm.execErr = errors.New("mise install: no version found for tool bogus-tool")
+
+	err := f.RunInstall([]string{"bogus-tool"}, "", PolicyAsk)
+	if err == nil {
+		t.Fatal("RunInstall must fail when mise install fails")
+	}
+	if !strings.Contains(err.Error(), "mison uninstall") {
+		t.Fatalf("error must hint removal of broken tools: %v", err)
+	}
+}
+
+func TestSyncApplyFailureHintsRemoval(t *testing.T) {
+	f, fm, _ := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\nbogus = \"9.9\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fm.execErr = errors.New("mise install: no version found")
+
+	err := f.RunSync(false, PolicyAsk)
+	if err == nil || !strings.Contains(err.Error(), "mison uninstall") {
+		t.Fatalf("sync failure must hint removal, got: %v", err)
+	}
+}
+
+func TestStatusWithoutEnvironmentHintsInit(t *testing.T) {
+	f, _, _ := newTestFlows(t) // fresh home, no init
+	err := f.RunStatus()
+	if err == nil || !strings.Contains(err.Error(), "mison init") {
+		t.Fatalf("status before init must hint init, got: %v", err)
+	}
+}
+
+func TestStatusMismatchHintsSync(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.layout().MiseToml, []byte("[tools]\nnode = \"22\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fm.setInstalled("node", "20")
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "run mison sync") || !strings.Contains(out.String(), "declared 22, installed 20") {
+		t.Fatalf("mismatch must show versions and sync hint:\n%s", out.String())
+	}
+}
+
+func TestPushFailureHintsRebindWhenRepoGone(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: Repository not found")}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "re-bind") {
+		t.Fatalf("repository-not-found must hint re-binding:\n%s", out.String())
+	}
+}
+
+func TestSyncOrphanDeclinedKeepsTools(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	f.Ask = &fakeAsk{confirm: false}
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.setInstalled("node", "22") // node installed but undeclared
+
+	if err := f.RunSync(false, PolicyAsk); err != nil {
+		t.Fatalf("RunSync() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "kept") {
+		t.Fatalf("declined prune must be reported as kept:\n%s", out.String())
+	}
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "uninstall") {
+			t.Fatalf("declined prune must not uninstall, execCalls: %v", fm.execCalls)
+		}
 	}
 }

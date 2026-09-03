@@ -113,6 +113,10 @@ func TestEnsureReplacesForeignFile(t *testing.T) {
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("foreign file should be replaced by symlink: %v", err)
 	}
+	bak, err := os.ReadFile(l.GlobalConfig + ".mison-bak")
+	if err != nil || string(bak) != "old content" {
+		t.Fatalf("foreign file must be backed up before replacement: %v %q", err, bak)
+	}
 }
 
 func TestLayoutLockPaths(t *testing.T) {
@@ -166,5 +170,9 @@ func TestEnsureReplacesForeignLockFile(t *testing.T) {
 	info, err := os.Lstat(l.GlobalLock)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("foreign lock file should be replaced by symlink: %v", err)
+	}
+	bak, err := os.ReadFile(l.GlobalLock + ".mison-bak")
+	if err != nil || string(bak) != "# stale lock" {
+		t.Fatalf("foreign lock must be backed up: %v %q", err, bak)
 	}
 }

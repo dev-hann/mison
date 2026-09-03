@@ -81,8 +81,14 @@ func (l Layout) ensureSymlink(path, target string) (bool, error) {
 				return false, nil
 			}
 		}
-		// foreign file or wrong symlink target: replace
-		if err := os.Remove(path); err != nil {
+		// foreign file or wrong symlink target: replace. A real file
+		// (a standalone mise user's config/lock) is backed up first —
+		// its content predates mison and is not ours to destroy.
+		if info.Mode()&os.ModeSymlink == 0 {
+			if err := os.Rename(path, path+".mison-bak"); err != nil {
+				return false, fmt.Errorf("back up %s: %w", filepath.Base(path), err)
+			}
+		} else if err := os.Remove(path); err != nil {
 			return false, fmt.Errorf("replace %s: %w", filepath.Base(path), err)
 		}
 	} else if !os.IsNotExist(err) {

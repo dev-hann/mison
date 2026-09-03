@@ -16,6 +16,8 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 ~/.mison/env + config symlink ensured (idempotent)     TestEnsureCreatesEnvDirAndFile
                                                         TestEnsureIdempotent
 ~/.config/mise/mise.lock symlink → env repo lockfile   TestEnsureSymlinksGlobalLock
+standalone mise user's real config/lock replaced       backed up to <name>.mison-bak
+                                                        TestEnsureReplacesForeignFile/LockFile
 ```
 
 ## mison init
@@ -45,6 +47,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | create race (repo appears between check and create) | create fails → re-check → Connect | TestRunInitCreateRaceFallsBackToConnect |
 | remote repo exists but empty | Connect then seed push | TestRunInitExistingEmptyRepoSeedsInitialPush |
 | local clone exists, init re-run | SmartPull only | TestRunInitConnectsExistingRepo |
+| explicit --repo differs from current remote | remote set-url (re-bind) → SmartPull | TestRunInitRebindsToExplicitRepo |
 | README expectations | none written — mise.toml is the whole repo (decision #16) | TestRunInitDoesNotWriteReadme |
 | default repo name drifts across versions | persisted name wins → no split-brain | TestRunInitPersistsRepoNameLocally |
 | explicit --repo flag vs persisted name | flag wins and is re-persisted | TestRunInitExplicitFlagWinsOverPersisted |
@@ -72,6 +75,7 @@ mise.toml schema > 1  → hard error "upgrade mison"     TestParseRejectsFutureS
 | push fails (offline) | warn-and-defer to next sync, command succeeds | TestInstallDeferredPushOnFailure |
 | future-schema remote at push | fatal: Fail port, non-zero exit (no defer) | TestInstallFutureSchemaPushIsFatal |
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
+| merge during install/uninstall push | merge reset clobbers the lock → regenerated + pushed when changed | TestPushRegeneratesLockAfterRemoteMerge |
 | existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
 | multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
 | lockfile refresh after apply | `mise lock --global` before push — same commit; failure warns + defers | TestInstallRefreshesLockBeforePush, TestInstallLockFailureWarnsAndDefers |
@@ -128,15 +132,16 @@ PlanSync four-way:
 | manual uncommitted edits + pull (Case F) | edits auto-committed, preserved AND pushed | TestSmartPullPreservesManualEdits |
 | already synchronized | no-op "Already synchronized" | TestRunSyncNoopWhenAligned, TestSmartPullUpToDate |
 | concurrent installs, different tools (diverged) | auto-merge, unattended, ↻ notice | TestSmartPushDivergedAutoMerge, TestSmartPullDivergedWithLocalPending |
-| same tool, both changed differently | prompt [1/2] or --ours/--theirs | TestSmartPushConflictResolvedLocal/Remote, TestConflictResolutionRoutesThroughPrompter |
+| same tool, both changed differently | prompt [1/2/3] (3 or any input = abort, kept unpushed) or --ours/--theirs | TestSmartPushConflictResolvedLocal/Remote, TestConflictResolutionRoutesThroughPrompter, TestResolveConflictAbort |
 | removal vs edit conflict | promoted to conflict — no silent destruction | TestMergeRemovalVsChangeConflict (env layer) |
 | offline deferred commits (ahead) | sync pushes pending after pull | TestSyncPullsBeforeApply |
 | future-schema remote | rejected BEFORE any reset/push; worktree untouched | TestSmartPullRejectsFutureSchemaWithoutTouchingWorktree, TestSmartPushRefusesToPushOntoFutureSchemaRemote |
 | pull network failure | warn, continue with local declaration | RunSync warn-and-continue (observed in live e2e) |
 | future-schema remote at pull | fatal: hard error, sync aborted | TestSyncFutureSchemaPullIsFatal |
 | orphans present | prompt → remove on approval / --prune unattended | TestRunSyncPruneRemovesOrphans |
+| gh undeclared but installed | never offered as orphan (bootstrap protection) | TestSyncNeverPrunesGh |
 | prune failure mid-list | remaining orphans still attempted; partial failure reported | TestSyncPruneContinuesPastFailures |
-| orphan removal declined | "kept" notice + --prune hint | (symmetric path of the prune test) |
+| orphan removal declined | "kept" notice + --prune hint | TestSyncOrphanDeclinedKeepsTools |
 | machine missing the symlink (clone-only) | sync restores it via Ensure | TestRunSyncRestoresGlobalSymlink |
 | lockfile after apply | regenerated; changed content → "mison: refresh lock" push; no-op sync skips regen | TestSyncPushesRefreshedLock, TestSyncSkipsLockPushWhenUnchanged |
 | remote lock checkout | FastForward reset brings remote's mise.lock into the worktree | TestSmartPullFastForwardChecksOutLock |
@@ -179,8 +184,8 @@ PlanSync four-way:
 
 | Gap | Status |
 |---|---|
-| fetch↔push race (another machine pushes in between) | push rejected → next sync self-heals (structurally safe); no dedicated test |
+| fetch↔push race (another machine pushes in between) | push rejected → next sync self-heals (structurally safe); no dedicated test — same merge path as TestSmartPushDivergedAutoMerge |
 | corrupted/old mise binary | undetected; `mise doctor` integration is a future candidate |
 | damaged .git directory | error propagates; no recovery guidance |
 | very large declarations (hundreds of tools) | unmeasured; currently linear |
-| explicit test for the orphan-declined path | implied by symmetry with prune test; worth adding |
+| install failure blocks whole sync (bad tool) | error now hints `mison uninstall <tool>`; per-tool isolation deferred |
