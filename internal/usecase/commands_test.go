@@ -22,6 +22,7 @@ type fakeMise struct {
 	execCalls   []string
 	installDone bool
 	execErr     error
+	listErr     error
 }
 
 func (f *fakeMise) setInstalled(pairs ...string) {
@@ -47,6 +48,9 @@ func (f *fakeMise) Exec(args ...string) error {
 	return nil
 }
 func (f *fakeMise) ListInstalled() ([]miserepo.Entry, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.extra, nil
 }
 
@@ -844,5 +848,17 @@ func TestRunInitExplicitFlagWinsOverPersisted(t *testing.T) {
 	persisted, err := os.ReadFile(filepath.Join(cfgDir, "config.toml"))
 	if err != nil || !strings.Contains(string(persisted), "mison-env") {
 		t.Fatalf("flag choice must be persisted: %v %q", err, persisted)
+	}
+}
+
+func TestVerifyWarnsWhenListFails(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	fm.listErr = errors.New("mise ls broke")
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "could not verify installation") {
+		t.Fatalf("list failure must warn, output:\n%s", out.String())
 	}
 }

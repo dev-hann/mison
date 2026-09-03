@@ -254,6 +254,7 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
 	installed, err := f.installedTools()
 	if err != nil {
+		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
 	}
 	present := map[string]bool{}
@@ -273,6 +274,7 @@ func (f *Flows) verifyVisible(names []string, ignore map[string]bool) {
 func (f *Flows) verifyDeclaredApplied(declared []env.Tool) {
 	installed, err := f.installedTools()
 	if err != nil {
+		f.UI.Warn("could not verify installation (" + err.Error() + ")")
 		return
 	}
 	info := f.detect()
