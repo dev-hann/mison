@@ -198,7 +198,11 @@ func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 			f.UI.Fail("declaration saved locally — push refused: " + err.Error())
 			return err
 		}
-		f.UI.Warn("could not push — will retry on next sync (" + err.Error() + ")")
+		warn := "could not push — will retry on next sync (" + err.Error() + ")"
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
+			warn += " — the env repo may be gone; re-bind with mison init --repo <name>"
+		}
+		f.UI.Warn(warn)
 		return nil
 	}
 	if len(merged) > 0 {

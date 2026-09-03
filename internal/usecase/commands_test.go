@@ -1212,3 +1212,15 @@ func TestStatusMismatchHintsSync(t *testing.T) {
 		t.Fatalf("mismatch must show versions and sync hint:\n%s", out.String())
 	}
 }
+
+func TestPushFailureHintsRebindWhenRepoGone(t *testing.T) {
+	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: Repository not found")}
+	f, _, out := newTestFlowsWith(t, repo)
+
+	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "re-bind") {
+		t.Fatalf("repository-not-found must hint re-binding:\n%s", out.String())
+	}
+}

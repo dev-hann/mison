@@ -80,8 +80,8 @@ func (t *TermUI) ResolveConflict(c env.Conflict) (env.Tool, error) {
 		remoteDesc = c.Remote.Version
 	}
 	t.Fail(fmt.Sprintf("Conflict on %s (this machine: %s, remote: %s)", c.Name, localDesc, remoteDesc))
-	t.Line("  [1] keep this machine  [2] accept remote")
-	_, _ = fmt.Fprint(t.out, "Choose [1/2]: ")
+	t.Line("  [1] keep this machine  [2] accept remote  [3] abort (keep unpushed)")
+	_, _ = fmt.Fprint(t.out, "Choose [1/2/3]: ")
 
 	switch strings.TrimSpace(t.readLine()) {
 	case "1":
