@@ -100,13 +100,13 @@ Principle: hide complexity (git), never hide information (changes).
 | 3 | mise via mise.run | one path for macOS+Linux, no OS package logic |
 | 4 | gh via mise + device flow | no PAT storage/OAuth impl; gh owns tokens |
 | 5 | gh declared in mise.toml | env bootstraps itself on any machine |
-| 6 | 5 commands only | Minimal V1; scan/adopt deferred |
+| 6 | 7 commands (init/install/uninstall/sync/status/update/upgrade) | update+upgrade added in v0.5.0 (decisions #12/#20); scan/adopt, Windows still deferred |
 | 7 | install/uninstall auto-push | user never runs git manually |
 | 8 | fetch-before-push, rebase | stale-machine push is the normal path |
 | 9 | semantic TOML merge | no conflicted state, key-level precision |
 | 10 | union semantics + os field | one shared env, mise-native OS scoping |
 | 11 | orphan prompt + --prune | safe default, scriptable override |
-| 12 | explicit mise update only | sync stays fast and predictable |
+| 12 | explicit mise update only | sync never bumps; `mison update` is the explicit re-resolution path (mise lock --bump) |
 | 13 | auto-commit manual edits | mison owns the repo; user edits are welcome |
 | 14 | schema guard `[_.mison] schema` | forward-incompatibility shield (npm lockfileVersion pattern); older mison refuses newer schemas before any reset/push |
 | 15 | repo name `mison-env`, persisted in ~/.mison/config.toml | short, self-describing; local persistence prevents default-drift split-brain across machines |
@@ -114,6 +114,7 @@ Principle: hide complexity (git), never hide information (changes).
 | 17 | install = apply-first | a tool is declared only after it installed locally — failures never pollute the shared declaration |
 | 18 | sync applies per tool with outcome classes | Applied / SkippedPlatform / Failed — no mid-flow aborts; lock-derived platform filter skips tools with no local build |
 | 19 | install failures exit non-zero; sync failures warn | registration denial must be visible; a pulled declaration is not this machine's to undeclare |
+| 20 | `mison update` = tools, `mison upgrade` = mison itself | gh-style split; update is confirm-gated (declaration versions stay fuzzy — only the lock advances); upgrade reruns the checksum-verified installer, refuses "dev" builds |
 
 ## 6. Sync case matrix
 

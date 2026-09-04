@@ -80,6 +80,42 @@ func (c *GitHub) RepoURL(name string) (string, error) {
 	return url + ".git", nil
 }
 
+// LatestReleaseTag queries the GitHub API for a repo's latest release
+// tag. Deliberately plain HTTP (curl), not gh — upgrading mison must
+// work even when gh auth is broken.
+func (c *GitHub) LatestReleaseTag(repo string) (string, error) {
+	url := "https://api.github.com/repos/" + repo + "/releases/latest"
+	out, err := c.r.Run(service.MiseEnv(c.home), "sh", "-c", "curl -fsSL "+url)
+	if err != nil {
+		return "", fmt.Errorf("latest release of %s: %w — %s", repo, err, strings.TrimSpace(out))
+	}
+	key := `"tag_name"`
+	i := strings.Index(out, key)
+	if i < 0 {
+		return "", fmt.Errorf("latest release of %s: no tag_name in response", repo)
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(out[i+len(key):]), ":"))
+	if !strings.HasPrefix(rest, `"`) {
+		return "", fmt.Errorf("latest release of %s: malformed tag_name", repo)
+	}
+	vEnd := strings.Index(rest[1:], `"`)
+	if vEnd < 0 {
+		return "", fmt.Errorf("latest release of %s: malformed tag_name", repo)
+	}
+	return rest[1 : 1+vEnd], nil
+}
+
+// RunMisonInstaller runs the official install.sh (checksum-verified,
+// keeps the mison.old backup) — the same path the README documents.
+func (c *GitHub) RunMisonInstaller() error {
+	script := "curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh"
+	out, err := c.r.Run(service.MiseEnv(c.home), "sh", "-c", script)
+	if err != nil {
+		return fmt.Errorf("install mison: %w — %s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
 // CreatePrivateRepo creates a private repository and returns its URL.
 func (c *GitHub) CreatePrivateRepo(name string) (string, error) {
 	if _, err := c.run("repo", "create", name, "--private"); err != nil {

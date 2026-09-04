@@ -65,6 +65,8 @@ mison install node@22 rg      # install first; success earns a declaration + pus
 mison uninstall node --yes    # remove everywhere + auto push
 mison sync                    # pull latest declaration and apply it
 mison status                  # compare declaration vs installed (✓ ✗ ⚠)
+mison update [--dry-run]      # re-resolve fuzzy versions (latest, "22") + install
+mison upgrade                 # upgrade the mison binary itself
 ```
 
 Platform scoping is automatic: mison reads each tool's supported

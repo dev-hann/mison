@@ -43,6 +43,8 @@ Core workflow:
 		newUninstallCmd(f),
 		newSyncCmd(f),
 		newStatusCmd(f),
+		newUpdateCmd(f),
+		newUpgradeCmd(f, version),
 	)
 	return root
 }

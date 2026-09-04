@@ -70,6 +70,27 @@ func (m *Repo) Exec(args ...string) error {
 	return err
 }
 
+// BumpCandidate is one fuzzy-selector re-resolution offered by
+// `mise lock --bump --dry-run --json`.
+type BumpCandidate struct {
+	Name        string   `json:"name"`
+	OldVersions []string `json:"old_versions"`
+	NewVersions []string `json:"new_versions"`
+}
+
+// BumpDryRun lists available updates without writing anything.
+func (m *Repo) BumpDryRun() ([]BumpCandidate, error) {
+	out, err := m.exec("lock", "--global", "--bump", "--dry-run", "--json")
+	if err != nil {
+		return nil, fmt.Errorf("mise lock --bump --dry-run: %w", err)
+	}
+	var candidates []BumpCandidate
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &candidates); err != nil {
+		return nil, fmt.Errorf("mise lock --bump --dry-run: parse output: %w", err)
+	}
+	return candidates, nil
+}
+
 // ListInstalled parses `mise ls --current --json` into raw entries.
 // Every installed version is reported; filtering by activity or
 // ownership belongs to the caller.
