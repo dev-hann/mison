@@ -134,3 +134,36 @@ func TestListInstalledParsesRawEntries(t *testing.T) {
 		t.Errorf("node active entry = %+v", entries[2])
 	}
 }
+
+func TestBumpDryRunParsesCandidates(t *testing.T) {
+	fr := &fakeRunner{results: map[string]string{
+		"mise lock --global --bump --dry-run --json": `[
+  {"name": "node", "backend": "core:node", "lockfile": "~/.config/mise/mise.lock",
+   "old_versions": ["22.23.2"], "new_versions": ["22.24.0"]},
+  {"name": "jq", "backend": "core:jq", "lockfile": "~/.config/mise/mise.lock",
+   "old_versions": ["1.8.2"], "new_versions": ["1.9.0"]}
+]`,
+	}}
+	m := New(fr, "/home/u")
+
+	cs, err := m.BumpDryRun()
+	if err != nil {
+		t.Fatalf("BumpDryRun() error = %v", err)
+	}
+	if len(cs) != 2 || cs[0].Name != "node" ||
+		cs[0].OldVersions[0] != "22.23.2" || cs[0].NewVersions[0] != "22.24.0" {
+		t.Fatalf("candidates = %+v", cs)
+	}
+}
+
+func TestBumpDryRunEmpty(t *testing.T) {
+	fr := &fakeRunner{results: map[string]string{
+		"mise lock --global --bump --dry-run --json": "[]",
+	}}
+	m := New(fr, "/home/u")
+
+	cs, err := m.BumpDryRun()
+	if err != nil || len(cs) != 0 {
+		t.Fatalf("empty bump = %+v, %v — want zero candidates, no error", cs, err)
+	}
+}

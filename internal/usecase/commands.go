@@ -28,6 +28,8 @@ type GhClient interface {
 	RepoExists(name string) bool
 	RepoURL(name string) (string, error)
 	CreatePrivateRepo(name string) (string, error)
+	LatestReleaseTag(repo string) (string, error)
+	RunMisonInstaller() error
 }
 
 // DefaultRepoName is the environment repository mison creates.
@@ -160,6 +162,7 @@ type MiseRepoIface interface {
 	RunInstaller() error
 	Exec(args ...string) error
 	ListInstalled() ([]miserepo.Entry, error)
+	BumpDryRun() ([]miserepo.BumpCandidate, error)
 }
 
 // EnvRepoIface is the environment-repository surface flows depend on

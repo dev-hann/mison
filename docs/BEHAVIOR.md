@@ -162,6 +162,40 @@ PlanSync four-way:
 | per-tool apply failure mid-sync | warn + continue; sync completes (exit 0); removal hint shown | TestSyncApplyFailureHintsRemoval |
 | unrelated histories (manually seeded repo) | base="" → merge path | TestPlanSyncTable row |
 
+## mison update [<tools>...] [--dry-run] [--ours/--theirs]
+
+```
+① mise lock --global --bump --dry-run --json → candidates (fuzzy selectors only)
+   args filter the set; unknown/pinned names warn "no update available"
+② none → "All declared tools are up to date"
+③ each candidate listed (name old → new)
+④ --dry-run stops here; otherwise Confirm("Update N tool(s)?")
+⑤ mise lock --bump <names> → mise install → refreshLock → commitAndPush "update: ..."
+```
+
+| Edge case | Behavior | Test |
+|---|---|---|
+| no fuzzy selectors moved | up-to-date noop | TestRunUpdateUpToDateNoop |
+| --dry-run | lists candidates, applies nothing | TestRunUpdateDryRunShowsCandidatesOnly |
+| confirm declined | "aborted — nothing changed", no bump, no push | TestRunUpdateDeclinedAborts |
+| accepted | bump + install + one "update:" commit carrying old→new versions | TestRunUpdateAppliesAfterConfirm |
+| exact-pinned tools | never offered (mise --bump semantics) | TestRunUpdateUpToDateNoop |
+
+## mison upgrade
+
+```
+① current == "dev" → refuse (release comparison meaningless)
+② GitHub API latest tag (plain curl — independent of gh auth)
+③ same version → "up to date"; newer → run official install.sh
+   (checksum-verified, keeps mison.old) → report old → new
+```
+
+| Edge case | Behavior | Test |
+|---|---|---|
+| development build | refuses with rebuild hint | TestRunUpgradeRefusesDevBuild |
+| already latest | up-to-date notice, no installer | TestRunUpgradeNoopWhenCurrent |
+| newer release | installer runs, versions reported, mison.old noted | TestRunUpgradeRunsInstaller |
+
 ## mison status (read-only)
 
 ```

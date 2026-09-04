@@ -17,13 +17,14 @@ import (
 // fakeMise implements MiseRepoIface; entries default to mison-owned
 // sources so OwnedTools passes them through.
 type fakeMise struct {
-	home        string
-	extra       []miserepo.Entry // foreign/inactive extras
-	execCalls   []string
-	installDone bool
-	execErr     error
-	listErr     error
-	execFailArg string
+	home           string
+	extra          []miserepo.Entry // foreign/inactive extras
+	execCalls      []string
+	installDone    bool
+	execErr        error
+	listErr        error
+	execFailArg    string
+	bumpCandidates []miserepo.BumpCandidate
 	// lockResult: when set, Exec("lock", "--global") writes it to the
 	// env-dir lockfile — simulates mise's side effect through the symlink.
 	// lockResults (when set) supplies DIFFERENT content per successive
@@ -81,6 +82,10 @@ func (f *fakeMise) Exec(args ...string) error {
 	f.execCalls = append(f.execCalls, joined)
 	return nil
 }
+func (f *fakeMise) BumpDryRun() ([]miserepo.BumpCandidate, error) {
+	return f.bumpCandidates, nil
+}
+
 func (f *fakeMise) ListInstalled() ([]miserepo.Entry, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
@@ -150,14 +155,16 @@ func (f *fakeRepo) SyncStatus() (SyncInfo, error) {
 }
 
 type fakeGh struct {
-	installed bool
-	authed    bool
-	created   []string
-	exists    bool
-	url       string
-	createErr error
-	whoami    string
-	whoamiErr error
+	installed    bool
+	authed       bool
+	created      []string
+	exists       bool
+	url          string
+	createErr    error
+	whoami       string
+	whoamiErr    error
+	latestTag    string
+	installerRun bool
 	// existsFlip: when set, the first RepoExists call returns false and
 	// later calls return exists — simulates a create race.
 	existsFlip bool
@@ -176,7 +183,12 @@ func (f *fakeGh) RepoExists(string) bool {
 	}
 	return f.exists
 }
-func (f *fakeGh) RepoURL(string) (string, error) { return f.url, nil }
+func (f *fakeGh) RepoURL(string) (string, error)          { return f.url, nil }
+func (f *fakeGh) LatestReleaseTag(string) (string, error) { return f.latestTag, nil }
+func (f *fakeGh) RunMisonInstaller() error {
+	f.installerRun = true
+	return nil
+}
 func (f *fakeGh) CreatePrivateRepo(name string) (string, error) {
 	if f.createErr != nil {
 		return "", f.createErr
@@ -1518,5 +1530,147 @@ func TestSyncPullGatedByAccount(t *testing.T) {
 	}
 	if repo.pulls != 0 {
 		t.Fatalf("no pull may happen: %d", repo.pulls)
+	}
+}
+
+func TestRunUpdateDryRunShowsCandidatesOnly(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, out := newTestFlowsWith(t, repo)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.bumpCandidates = []miserepo.BumpCandidate{
+		{Name: "node", OldVersions: []string{"22.23.2"}, NewVersions: []string{"22.24.0"}},
+	}
+
+	if err := f.RunUpdate(nil, true, PolicyAsk); err != nil {
+		t.Fatalf("RunUpdate(dry-run) error = %v", err)
+	}
+	if !strings.Contains(out.String(), "node 22.23.2 → 22.24.0") {
+		t.Fatalf("dry run must list candidates:\n%s", out.String())
+	}
+	if len(repo.pushes) != 0 || len(fm.execCalls) != 0 {
+		t.Fatalf("dry run must not apply anything: pushes=%v exec=%v", repo.pushes, fm.execCalls)
+	}
+}
+
+func TestRunUpdateUpToDateNoop(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunUpdate(nil, false, PolicyAsk); err != nil {
+		t.Fatalf("RunUpdate() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "up to date") {
+		t.Fatalf("no candidates → up-to-date notice:\n%s", out.String())
+	}
+}
+
+func TestRunUpdateAppliesAfterConfirm(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, out := newTestFlowsWith(t, repo)
+	f.Ask = &fakeAsk{confirm: true}
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.bumpCandidates = []miserepo.BumpCandidate{
+		{Name: "node", OldVersions: []string{"22.23.2"}, NewVersions: []string{"22.24.0"}},
+	}
+	fm.lockResult = "# lock bumped\n"
+
+	if err := f.RunUpdate([]string{"node"}, false, PolicyAsk); err != nil {
+		t.Fatalf("RunUpdate() error = %v", err)
+	}
+	var bumped bool
+	for _, c := range fm.execCalls {
+		if c == "lock --global --bump node" {
+			bumped = true
+		}
+	}
+	if !bumped || !containsStr(fm.execCalls, "install") {
+		t.Fatalf("update must bump then install: %v", fm.execCalls)
+	}
+	if len(repo.pushes) != 1 || !strings.Contains(repo.pushes[0], "update:") {
+		t.Fatalf("pushes = %v, want one update commit", repo.pushes)
+	}
+	if !strings.Contains(repo.pushes[0], "22.23.2") {
+		t.Fatalf("commit message must carry versions: %v", repo.pushes)
+	}
+	_ = out
+}
+
+func containsStr(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRunUpdateDeclinedAborts(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, fm, _ := newTestFlowsWith(t, repo)
+	f.Ask = &fakeAsk{confirm: false}
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.bumpCandidates = []miserepo.BumpCandidate{
+		{Name: "node", OldVersions: []string{"22.23.2"}, NewVersions: []string{"22.24.0"}},
+	}
+
+	if err := f.RunUpdate(nil, false, PolicyAsk); err != nil {
+		t.Fatalf("RunUpdate() decline must not error: %v", err)
+	}
+	for _, c := range fm.execCalls {
+		if strings.Contains(c, "--bump") && !strings.Contains(c, "dry-run") {
+			t.Fatalf("declined update must not bump: %v", fm.execCalls)
+		}
+	}
+	if len(repo.pushes) != 0 {
+		t.Fatalf("declined update must not push: %v", repo.pushes)
+	}
+}
+
+func TestRunUpgradeNoopWhenCurrent(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Gh = &fakeGh{latestTag: "v9.9.9"}
+
+	if err := f.RunUpgrade("v9.9.9"); err != nil {
+		t.Fatalf("RunUpgrade() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "up to date") {
+		t.Fatalf("same version → up-to-date notice:\n%s", out.String())
+	}
+}
+
+func TestRunUpgradeRunsInstaller(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	gh := &fakeGh{latestTag: "v0.5.0"}
+	f.Gh = gh
+
+	if err := f.RunUpgrade("v0.4.1"); err != nil {
+		t.Fatalf("RunUpgrade() error = %v", err)
+	}
+	if !gh.installerRun {
+		t.Fatal("installer must run for a newer release")
+	}
+	if !strings.Contains(out.String(), "v0.4.1") || !strings.Contains(out.String(), "v0.5.0") {
+		t.Fatalf("upgrade must report versions:\n%s", out.String())
+	}
+}
+
+func TestRunUpgradeRefusesDevBuild(t *testing.T) {
+	f, _, _ := newTestFlows(t)
+	gh := &fakeGh{latestTag: "v9.9.9"}
+	f.Gh = gh
+
+	if err := f.RunUpgrade("dev"); err == nil {
+		t.Fatal("dev builds must refuse release comparison")
+	}
+	if gh.installerRun {
+		t.Fatal("no installer run for dev builds")
 	}
 }
