@@ -163,6 +163,7 @@ type MiseRepoIface interface {
 	Exec(args ...string) error
 	ListInstalled() ([]miserepo.Entry, error)
 	BumpDryRun() ([]miserepo.BumpCandidate, error)
+	Doctor() []string
 }
 
 // EnvRepoIface is the environment-repository surface flows depend on
@@ -624,7 +625,34 @@ func (f *Flows) RunStatus() error {
 		r.Warn(fmt.Sprintf("%d tool(s) missing", missing))
 	}
 	f.warnNonPortable(declared)
+	f.reportDoctorProblems()
 	return nil
+}
+
+// doctorNoise are mise doctor problems that are guaranteed in
+// mison's non-interactive exec context (or mere advice) — surfacing
+// them from status would be a permanent false positive.
+var doctorNoise = []string{"activated", "shims", "PATH", "self-update"}
+
+// reportDoctorProblems surfaces mise self-check problems that are not
+// context noise.
+func (f *Flows) reportDoctorProblems() {
+	var real []string
+	for _, p := range f.Mise.Doctor() {
+		noise := false
+		for _, n := range doctorNoise {
+			if strings.Contains(p, n) {
+				noise = true
+				break
+			}
+		}
+		if !noise {
+			real = append(real, p)
+		}
+	}
+	if len(real) > 0 {
+		f.UI.Warn(strings.Join(real, " | ") + " — run `mise doctor`")
+	}
 }
 
 // renderSyncStatus reports the local-vs-GitHub declaration relation.

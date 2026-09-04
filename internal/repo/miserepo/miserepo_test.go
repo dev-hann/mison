@@ -167,3 +167,33 @@ func TestBumpDryRunEmpty(t *testing.T) {
 		t.Fatalf("empty bump = %+v, %v — want zero candidates, no error", cs, err)
 	}
 }
+
+func TestDoctorCollectsProblems(t *testing.T) {
+	fr := &fakeRunner{results: map[string]string{
+		"mise doctor": `version: 2026.9.1
+activated: no
+shims_on_path: no
+
+1 problem found:
+1. mise is not activated, run mise help activate or
+   add the shims directory to PATH.
+`,
+	}}
+	m := New(fr, "/home/u")
+
+	problems := m.Doctor()
+	if len(problems) != 1 || !strings.Contains(problems[0], "not activated") {
+		t.Fatalf("Doctor() = %v, want one activation problem", problems)
+	}
+}
+
+func TestDoctorHealthyIsEmpty(t *testing.T) {
+	fr := &fakeRunner{results: map[string]string{
+		"mise doctor": "version: 2026.9.1\nNo problems found\n",
+	}}
+	m := New(fr, "/home/u")
+
+	if got := m.Doctor(); len(got) != 0 {
+		t.Fatalf("Doctor() = %v, want none", got)
+	}
+}

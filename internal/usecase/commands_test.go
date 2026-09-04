@@ -25,6 +25,7 @@ type fakeMise struct {
 	listErr        error
 	execFailArg    string
 	bumpCandidates []miserepo.BumpCandidate
+	doctorProblems []string
 	// lockResult: when set, Exec("lock", "--global") writes it to the
 	// env-dir lockfile — simulates mise's side effect through the symlink.
 	// lockResults (when set) supplies DIFFERENT content per successive
@@ -82,6 +83,8 @@ func (f *fakeMise) Exec(args ...string) error {
 	f.execCalls = append(f.execCalls, joined)
 	return nil
 }
+func (f *fakeMise) Doctor() []string { return f.doctorProblems }
+
 func (f *fakeMise) BumpDryRun() ([]miserepo.BumpCandidate, error) {
 	return f.bumpCandidates, nil
 }
@@ -1684,5 +1687,41 @@ func TestRunUpgradeVPrefixNormalizes(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "up to date") {
 		t.Fatalf("v-prefixed latest must match bare current:\\n%s", out.String())
+	}
+}
+
+func TestStatusSurfacesRealDoctorProblems(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.doctorProblems = []string{
+		"mise is not activated, run mise help activate or",
+		"config file has invalid syntax: /x/y.toml",
+	}
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "invalid syntax") || !strings.Contains(out.String(), "mise doctor") {
+		t.Fatalf("real doctor problems must surface:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "not activated") {
+		t.Fatalf("activation noise must be filtered (false positive in non-interactive context):\n%s", out.String())
+	}
+}
+
+func TestStatusSilentOnHealthyDoctor(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	fm.doctorProblems = []string{"mise is not activated, run mise help activate or"}
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if strings.Contains(out.String(), "doctor") {
+		t.Fatalf("noise-only problems must stay silent:\n%s", out.String())
 	}
 }

@@ -91,6 +91,29 @@ func (m *Repo) BumpDryRun() ([]BumpCandidate, error) {
 	return candidates, nil
 }
 
+// Doctor returns mise's self-check problem list (empty = healthy).
+// Output is captured even on non-zero exit — problems are the signal,
+// not the exit code.
+func (m *Repo) Doctor() []string {
+	out, _ := m.r.Run(service.MiseEnv(m.home), "mise", "doctor")
+	var problems []string
+	inList := false
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(line, "problem") && strings.Contains(line, "found") {
+			inList = true
+			continue
+		}
+		if !inList {
+			continue
+		}
+		if len(trimmed) > 2 && trimmed[0] >= '1' && trimmed[0] <= '9' && trimmed[1] == '.' {
+			problems = append(problems, trimmed[3:])
+		}
+	}
+	return problems
+}
+
 // ListInstalled parses `mise ls --current --json` into raw entries.
 // Every installed version is reported; filtering by activity or
 // ownership belongs to the caller.

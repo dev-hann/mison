@@ -104,6 +104,21 @@ restarting. `mison init --no-shell-setup` leaves rc files untouched.
 - **Air-gapped machines** — first setup and seeding need network
   access; afterwards offline deferral applies.
 
+## Using mise directly
+
+mison orchestrates the SHARED declaration (mise.toml, mise.lock, the
+env repo). Everything session- or project-local stays mise's job —
+mise is on your PATH and fully compatible:
+
+- run tasks: `mise run <task>`
+- one-off command envs: `mise exec node@22 -- node -v`
+- shell session versions: `mise shell node@22`
+- search the registry: `mise search ripgrep`
+- config editing/formatting: `mise edit`, `mise fmt`
+
+If a command mutates the global config (e.g. `mise use -g`), mison
+picks the change up on the next sync and commits it.
+
 ## Design
 
 See [docs/DESIGN.md](docs/DESIGN.md) for behavior specifications (sync

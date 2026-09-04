@@ -208,6 +208,7 @@ PlanSync four-way:
 |---|---|---|
 | mixed states | ✓ installed / ✗ missing (sync hint) / ⚠ mismatch | TestRunStatusRendersStates |
 | declaration contains path-backed tools | warn: machine-local, listed with paths (status + sync apply) | TestStatusWarnsPathBackedTools |
+| mise doctor reports real problems | surfaced (noise like activation/PATH advice filtered — always false in mison's exec context) | TestStatusSurfacesRealDoctorProblems, TestStatusSilentOnHealthyDoctor |
 | remote ahead | "↻ remote has new tools (x, y) — run mison sync" | TestSyncStatusBehind |
 | local unpushed | ⚠ "local changes not pushed" | TestSyncStatusAhead |
 | both changed | ⚠ "diverged" | TestSyncStatusDiverged |
