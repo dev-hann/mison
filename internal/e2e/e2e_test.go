@@ -141,3 +141,43 @@ func TestLockGlobalDeterministic(t *testing.T) {
 		t.Fatal("lockfile must not embed timestamps (would break cross-machine convergence)")
 	}
 }
+
+func TestMiseInstallOneOffDoesNotDeclare(t *testing.T) {
+	miseBin := filepath.Join(os.Getenv("HOME"), ".local", "bin", "mise")
+	if _, err := os.Stat(miseBin); err != nil {
+		t.Skip("mise not installed on this machine")
+	}
+
+	home := t.TempDir()
+	cfgDir := filepath.Join(home, ".config", "mise")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	globalConfig := filepath.Join(cfgDir, "config.toml")
+	before := "[tools]\njq = \"latest\"\n"
+	if err := os.WriteFile(globalConfig, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// apply-first load-bearing assumption: `mise install name@version`
+	// is a one-off — it must never write the config
+	cmd := exec.Command(miseBin, "install", "jq@latest")
+	cmd.Dir = home
+	cmd.Env = []string{
+		"HOME=" + home,
+		"PATH=" + os.Getenv("PATH"),
+		"MISE_GLOBAL_CONFIG_FILE=" + globalConfig,
+		"MISE_GLOBAL_CONFIG_ROOT=" + home,
+		"MISE_DATA_DIR=" + filepath.Join(home, ".local", "share", "mise"),
+		"MISE_CACHE_DIR=" + filepath.Join(home, ".cache", "mise"),
+		"MISE_TRUSTED_CONFIG_PATHS=" + globalConfig,
+		"MISE_CEILING_PATHS=" + home,
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("mise install jq: %v\n%s", err, out)
+	}
+	after, err := os.ReadFile(globalConfig)
+	if err != nil || string(after) != before {
+		t.Fatalf("mise install name@version must not modify config: %v\n%s", err, after)
+	}
+}

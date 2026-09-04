@@ -111,6 +111,9 @@ Principle: hide complexity (git), never hide information (changes).
 | 14 | schema guard `[_.mison] schema` | forward-incompatibility shield (npm lockfileVersion pattern); older mison refuses newer schemas before any reset/push |
 | 15 | repo name `mison-env`, persisted in ~/.mison/config.toml | short, self-describing; local persistence prevents default-drift split-brain across machines |
 | 16 | no README in the env repo | mise.toml is the single source of truth; the repo is mison-owned
+| 17 | install = apply-first | a tool is declared only after it installed locally — failures never pollute the shared declaration |
+| 18 | sync applies per tool with outcome classes | Applied / SkippedPlatform / Failed — no mid-flow aborts; lock-derived platform filter skips tools with no local build |
+| 19 | install failures exit non-zero; sync failures warn | registration denial must be visible; a pulled declaration is not this machine's to undeclare |
 
 ## 6. Sync case matrix
 

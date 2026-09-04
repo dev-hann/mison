@@ -1,6 +1,6 @@
 # Mison Behavior Reference — Command Flows, Edge Cases, Test Map
 
-Living reference generated from the codebase (v0.3.x). Use it to
+Living reference generated from the codebase (v0.4.x). Use it to
 answer "what happens when X?" without reading code. When behavior
 changes, update this file in the same commit.
 
@@ -60,31 +60,33 @@ second concurrent run on this machine                  refused (flock run mutex,
 | Connect target dir already has files | init+fetch+reset (not clone) | TestConnectFreshDir |
 | remote uses future schema | Connect refuses before reset; worktree untouched | TestConnectRejectsFutureSchemaRemote |
 
-## mison install <tools...> [--mac/--linux] [--ours/--theirs]
+## mison install <tools...> [--ours/--theirs]
 
 ```
-① parse specs (name@version, os flags)
-② edit declaration: SetTool (merges, preserves options)
-③ saveConfig → schema stamp
-④ OS-restricted tool not for this machine → ⚠ skip notice
-⑤ mise install
-⑥ visibility re-check (silent no-op detection → ⚠)
-⑦ commitAndPush: "install: X, Y"
+① parse specs (name@version)
+② mise install name@version per tool (one-off — mise never writes config)
+③ only Applied tools are declared (SetTool preserves options)
+④ saveConfig → schema stamp → lock refresh
+⑤ visibility re-check (silent no-op detection → ⚠)
+⑥ commitAndPush: "install: X, Y" — any failure exits non-zero
 ```
 
 | Edge case | Behavior | Test |
 |---|---|---|
 | malformed spec (`node@`) | immediate error, nothing changed | TestRunInstallInvalidSpec |
-| OS restriction doesn't match machine | declared, install skipped + notice | TestRunInstallWarnsOSSkip |
+| tool not in registry (htop) | ✗ outcome with mise's message; NOT declared; exit≠0 | TestInstallFailureDeclaresNothing |
+| every tool fails | "nothing installed — nothing declared" | TestInstallFailureDeclaresNothing |
+| partial success | applied tools declared + pushed; failures reported; exit≠0 | TestRunInstallWritesDeclarationAndApplies |
 | mise install silent no-op (broken symlink) | post-check warns | TestRunInstallWarnsStillMissing |
 | push fails (offline) | warn-and-defer to next sync, command succeeds | TestInstallDeferredPushOnFailure |
 | future-schema remote at push | fatal: Fail port, non-zero exit (no defer) | TestInstallFutureSchemaPushIsFatal |
 | other machine's changes found at push | auto-merge + mandatory ↻ notice | TestInstallShowsRemoteMergeNotice |
 | merge during install/uninstall push | merge reset clobbers the lock → regenerated + pushed when changed | TestPushRegeneratesLockAfterRemoteMerge |
-| existing tool options (postinstall...) | preserved on version/os change | TestSetToolPreservesExistingOptions, TestSetToolAddsOSWhileKeepingOptions, TestSetToolRemovesOnlyOS |
-| multiple tools at once | one commit + one push | TestRunInstallWritesDeclarationAndApplies |
+| existing tool options (postinstall...) | preserved on version change | TestSetToolPreservesExistingOptions |
+| multiple tools at once | per-tool attempts, one commit + one push for successes | TestRunInstallWritesDeclarationAndApplies |
 | lockfile refresh after apply | `mise lock --global` before push — same commit; failure warns + defers | TestInstallRefreshesLockBeforePush, TestInstallLockFailureWarnsAndDefers |
 | first machine (no repo connected) | push silently skipped (local-only mode) | TestRunInstallCreatesSymlink (repo-less path) |
+| `mise install name@version` is a one-off | config never modified by mise (apply-first premise) | e2e TestMiseInstallOneOffDoesNotDeclare |
 
 ## mison uninstall <tools...> [--yes]
 
@@ -154,6 +156,8 @@ PlanSync four-way:
 | remote lock checkout | FastForward reset brings remote's mise.lock into the worktree | TestSmartPullFastForwardChecksOutLock |
 | nothing to commit | clean tree → commit skipped | TestSmartPushSkipsEmptyCommit |
 | partially applied state (failed prior sync) | always re-diff → reinstall (idempotent repair) | TestRunSyncAppliesMissing, TestRunSyncWarnsStillMissing |
+| tool has no build for this platform (per lock) | never attempted; ⚠ "not for this platform"; sync stays green | TestPlatformScopeSplitsByLock |
+| per-tool apply failure mid-sync | warn + continue; sync completes (exit 0); removal hint shown | TestSyncApplyFailureHintsRemoval |
 | unrelated histories (manually seeded repo) | base="" → merge path | TestPlanSyncTable row |
 
 ## mison status (read-only)
@@ -182,7 +186,8 @@ PlanSync four-way:
 | `"22"` vs installed `22.11.0` | prefix match = equal | TestDiffPrefixMatch |
 | `latest` declared | never string-compared (mise's domain) | TestDiffLatestNeverStringMismatch |
 | unknown sections ([env]/[tasks]) | preserved on rewrite | TestBytesPreservesUnknownSections |
-| os flag conversion (`--mac=arm64`) | normalized to `macos/arm64`; invalid → nil | TestParseOSSpec, TestParseOSSpecInvalid, TestAppliesTo |
+| mise.lock platform keys per tool | `[tools.X."platforms.<key>"]` — the cross-machine scope map | TestParseLockPlatformSets |
+| manual os field on an entry | still honored by platform scoping | TestPlatformScopeHonorsManualOSField, TestAppliesTo |
 | OS-restricted tools in merge | os arrays are 3-way merged too | TestMergeOSEntryChange, TestMergeOSConflict |
 | option-only edit (postinstall, one side) | taken from the changed side — never silently dropped | TestMergeOptionOnlyRemoteEditTaken |
 | option-only edit, both sides differ | promoted to conflict | TestMergeOptionBothChangedDifferentlyConflicts |

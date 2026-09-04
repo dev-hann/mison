@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install
 Or pin a version:
 
 ```bash
-MISON_VERSION=v0.3.4 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
+MISON_VERSION=v0.4.0 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh
 ```
 
 The installer detects your OS/architecture, downloads the release
@@ -61,12 +61,15 @@ less install.sh && sh install.sh
 
 ```bash
 mison init                    # bootstrap: mise → shell wiring → gh → env repo
-mison install node@22 rg      # declare + install + auto commit & push
-mison install docker --linux  # OS-scoped: only installs on Linux machines
+mison install node@22 rg      # install first; success earns a declaration + push
 mison uninstall node --yes    # remove everywhere + auto push
 mison sync                    # pull latest declaration and apply it
 mison status                  # compare declaration vs installed (✓ ✗ ⚠)
 ```
+
+Platform scoping is automatic: mison reads each tool's supported
+platforms from the synced lockfile and never attempts a tool with no
+build for the current machine (shown as "not for this platform").
 
 After `mison init` on a fresh machine, run `exec zsh` (or open a new
 terminal) — the init command wires `mise activate` into your shell rc
