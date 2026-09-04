@@ -4,30 +4,37 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/dev-hann/mison/internal/env"
 )
 
+// testLock is platform-neutral: "neverhere" publishes only for
+// windows (skipped on every mison-supported runner), "everywhere"
+// covers all mac/linux platforms.
 const testLock = `lockfile_version = 1
 
-[[tools.btop]]
+[[tools.neverhere]]
 version = "1.0"
 
-[tools.btop."platforms.linux-x64"]
+[tools.neverhere."platforms.windows-x64"]
 url = "https://x"
 
-[tools.btop."platforms.linux-arm64"]
-url = "https://x"
-
-[[tools.delta]]
+[[tools.everywhere]]
 version = "0.19"
 
-[tools.delta."platforms.macos-arm64"]
+[tools.everywhere."platforms.macos-arm64"]
 url = "https://x"
 
-[tools.delta."platforms.linux-x64"]
+[tools.everywhere."platforms.macos-x64"]
+url = "https://x"
+
+[tools.everywhere."platforms.linux-x64"]
+url = "https://x"
+
+[tools.everywhere."platforms.linux-arm64"]
 url = "https://x"
 `
 
@@ -46,18 +53,18 @@ func TestPlatformScopeSplitsByLock(t *testing.T) {
 	writeLock(t, f, testLock)
 
 	declared := []env.Tool{
-		{Name: "delta", Version: "latest"},    // has macos-arm64 -> in scope
-		{Name: "btop", Version: "latest"},     // linux-only per lock -> skipped
-		{Name: "unlocked", Version: "latest"}, // absent from lock -> fallback in scope
+		{Name: "everywhere", Version: "latest"},
+		{Name: "neverhere", Version: "latest"},
+		{Name: "unlocked", Version: "latest"},
 	}
 	inScope, skipped := f.platformScope(declared)
-	if len(inScope) != 2 || inScope[0].Name != "delta" || inScope[1].Name != "unlocked" {
+	if len(inScope) != 2 || inScope[0].Name != "everywhere" || inScope[1].Name != "unlocked" {
 		t.Fatalf("inScope = %+v", inScope)
 	}
-	if len(skipped) != 1 || skipped[0].Tool.Name != "btop" || skipped[0].Result != SkippedPlatform {
+	if len(skipped) != 1 || skipped[0].Tool.Name != "neverhere" || skipped[0].Result != SkippedPlatform {
 		t.Fatalf("skipped = %+v", skipped)
 	}
-	if !strings.Contains(skipped[0].Detail, "linux-x64") {
+	if !strings.Contains(skipped[0].Detail, "windows-x64") {
 		t.Fatalf("skip detail must list supported platforms: %q", skipped[0].Detail)
 	}
 }
@@ -80,11 +87,15 @@ func TestPlatformScopeHonorsManualOSField(t *testing.T) {
 	if _, err := f.layout().Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	declared := []env.Tool{{Name: "docker", Version: "latest", OS: []string{"linux"}}}
+	opposite := "macos"
+	if runtime.GOOS == "darwin" {
+		opposite = "linux"
+	}
+	declared := []env.Tool{{Name: "docker", Version: "latest", OS: []string{opposite}}}
 
 	inScope, skipped := f.platformScope(declared)
 	if len(inScope) != 0 || len(skipped) != 1 || skipped[0].Result != SkippedPlatform {
-		t.Fatalf("manual os field must skip on darwin: %+v / %+v", inScope, skipped)
+		t.Fatalf("manual os field must skip on %s: %+v / %+v", runtime.GOOS, inScope, skipped)
 	}
 }
 
@@ -118,7 +129,7 @@ func TestReportOutcomesRendersAllClasses(t *testing.T) {
 	f, _, out := newTestFlows(t)
 	outcomes := []ToolOutcome{
 		{Tool: env.Tool{Name: "delta", Version: "latest"}, Result: Applied},
-		{Tool: env.Tool{Name: "btop", Version: "latest"}, Result: SkippedPlatform, Detail: "linux-x64, linux-arm64"},
+		{Tool: env.Tool{Name: "btop", Version: "latest"}, Result: SkippedPlatform, Detail: "windows-x64"},
 		{Tool: env.Tool{Name: "bogus", Version: "latest"}, Result: Failed, Detail: errors.New("not found").Error()},
 	}
 
