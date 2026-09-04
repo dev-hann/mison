@@ -637,7 +637,7 @@ var doctorNoise = []string{"activated", "shims", "PATH", "self-update"}
 // reportDoctorProblems surfaces mise self-check problems that are not
 // context noise.
 func (f *Flows) reportDoctorProblems() {
-	var real []string
+	var genuine []string
 	for _, p := range f.Mise.Doctor() {
 		noise := false
 		for _, n := range doctorNoise {
@@ -647,11 +647,11 @@ func (f *Flows) reportDoctorProblems() {
 			}
 		}
 		if !noise {
-			real = append(real, p)
+			genuine = append(genuine, p)
 		}
 	}
-	if len(real) > 0 {
-		f.UI.Warn(strings.Join(real, " | ") + " — run `mise doctor`")
+	if len(genuine) > 0 {
+		f.UI.Warn(strings.Join(genuine, " | ") + " — run `mise doctor`")
 	}
 }
 
