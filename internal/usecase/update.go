@@ -98,16 +98,35 @@ func (f *Flows) RunUpgrade(currentVersion string) error {
 	// goreleaser injects "0.5.0" (no v); the API returns "v0.5.0" —
 	// normalize before comparing so equal versions aren't reinstalled
 	trim := func(v string) string { return strings.TrimPrefix(v, "v") }
-	if trim(latest) == trim(currentVersion) {
+
+	if trim(latest) != trim(currentVersion) {
+		f.UI.Step(fmt.Sprintf("Upgrading mison %s → %s", currentVersion, latest))
+		if err := f.Gh.RunMisonInstaller(); err != nil {
+			return err
+		}
+		f.UI.Line("Previous binary kept as ~/.local/bin/mison.old (rollback: cp it back)")
+		f.UI.Step("Upgraded to " + latest)
+	} else {
 		f.UI.Step("mison is up to date (" + currentVersion + ")")
-		return nil
 	}
 
-	f.UI.Step(fmt.Sprintf("Upgrading mison %s → %s", currentVersion, latest))
-	if err := f.Gh.RunMisonInstaller(); err != nil {
-		return err
+	// mise is the other binary mison depends on — upgrade owns it too
+	// (decision #12's explicit path; sync never touches mise).
+	before, _ := f.Mise.Version()
+	if err := f.Mise.Exec("self-update"); err != nil {
+		f.UI.Warn("mise self-update unavailable (" + err.Error() + ") — if mise came from brew: brew upgrade mise")
+		return nil
 	}
-	f.UI.Line("Previous binary kept as ~/.local/bin/mison.old (rollback: cp it back)")
-	f.UI.Step("Upgraded to " + latest)
+	after, _ := f.Mise.Version()
+	if before != "" && after != "" && before != after {
+		f.UI.Step("mise " + before + " → " + after)
+	} else {
+		f.UI.Step("mise is up to date" + func() string {
+			if after != "" {
+				return " (" + after + ")"
+			}
+			return ""
+		}())
+	}
 	return nil
 }

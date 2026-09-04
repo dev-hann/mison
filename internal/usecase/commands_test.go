@@ -17,15 +17,17 @@ import (
 // fakeMise implements MiseRepoIface; entries default to mison-owned
 // sources so OwnedTools passes them through.
 type fakeMise struct {
-	home           string
-	extra          []miserepo.Entry // foreign/inactive extras
-	execCalls      []string
-	installDone    bool
-	execErr        error
-	listErr        error
-	execFailArg    string
-	bumpCandidates []miserepo.BumpCandidate
-	doctorProblems []string
+	home            string
+	extra           []miserepo.Entry // foreign/inactive extras
+	execCalls       []string
+	installDone     bool
+	execErr         error
+	listErr         error
+	execFailArg     string
+	bumpCandidates  []miserepo.BumpCandidate
+	doctorProblems  []string
+	miseVersion     string
+	miseVersionNext string
 	// lockResult: when set, Exec("lock", "--global") writes it to the
 	// env-dir lockfile — simulates mise's side effect through the symlink.
 	// lockResults (when set) supplies DIFFERENT content per successive
@@ -59,6 +61,9 @@ func (f *fakeMise) Exec(args ...string) error {
 	if f.execFailArg != "" && strings.Contains(joined, f.execFailArg) {
 		return fmt.Errorf("uninstall failed: %s", f.execFailArg)
 	}
+	if joined == "self-update" && f.miseVersionNext != "" {
+		f.miseVersion = f.miseVersionNext
+	}
 	if joined == "lock --global" {
 		content := f.lockResult
 		if len(f.lockResults) > 0 {
@@ -84,6 +89,8 @@ func (f *fakeMise) Exec(args ...string) error {
 	return nil
 }
 func (f *fakeMise) Doctor() []string { return f.doctorProblems }
+
+func (f *fakeMise) Version() (string, error) { return f.miseVersion, nil }
 
 func (f *fakeMise) BumpDryRun() ([]miserepo.BumpCandidate, error) {
 	return f.bumpCandidates, nil
@@ -1723,5 +1730,93 @@ func TestStatusSilentOnHealthyDoctor(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "doctor") {
 		t.Fatalf("noise-only problems must stay silent:\n%s", out.String())
+	}
+}
+
+func TestStatusShowsStackVersions(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	f.MisonVersion = "0.5.2"
+	fm.miseVersion = "2026.9.1"
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "mison 0.5.2 · mise 2026.9.1") {
+		t.Fatalf("status must show the stack header:\n%s", out.String())
+	}
+}
+
+func TestStatusWarnsOldMise(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	fm.miseVersion = "2026.1.0"
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunStatus(); err != nil {
+		t.Fatalf("RunStatus() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "mise 2026.1.0") || !strings.Contains(out.String(), "2026.8") {
+		t.Fatalf("old mise must warn with the floor version:\n%s", out.String())
+	}
+}
+
+func TestVersionAtLeast(t *testing.T) {
+	cases := []struct {
+		got, floor string
+		want       bool
+	}{
+		{"2026.9.1", "2026.8.0", true},
+		{"2026.8.0", "2026.8.0", true},
+		{"2026.1.0", "2026.8.0", false},
+		{"2026.10.1", "2026.9.2", true}, // numeric, not lexicographic
+		{"2027.1.0", "2026.12.9", true},
+		{"garbage", "2026.8.0", false},
+	}
+	for _, c := range cases {
+		if got := versionAtLeast(c.got, c.floor); got != c.want {
+			t.Errorf("versionAtLeast(%q, %q) = %v, want %v", c.got, c.floor, got, c.want)
+		}
+	}
+}
+
+func TestRunUpgradeAlsoUpdatesMise(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Gh = &fakeGh{latestTag: "v9.9.9"}
+	fm, _ := f.Mise.(*fakeMise)
+	fm.miseVersion = "2026.9.1"
+	fm.miseVersionNext = "2026.9.2"
+
+	if err := f.RunUpgrade("0.5.2"); err != nil {
+		t.Fatalf("RunUpgrade() error = %v", err)
+	}
+	updated := false
+	for _, c := range fm.execCalls {
+		if c == "self-update" {
+			updated = true
+		}
+	}
+	if !updated {
+		t.Fatalf("upgrade must run mise self-update: %v", fm.execCalls)
+	}
+	if !strings.Contains(out.String(), "2026.9.1") || !strings.Contains(out.String(), "2026.9.2") {
+		t.Fatalf("mise update must report old → new:\n%s", out.String())
+	}
+}
+
+func TestRunUpgradeMiseSelfUpdateUnavailable(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	f.Gh = &fakeGh{latestTag: "v9.9.9"}
+	fm.execFailArg = "self-update"
+	fm.miseVersion = "2026.9.1"
+
+	if err := f.RunUpgrade("0.5.2"); err != nil {
+		t.Fatalf("mise self-update failure must not fail the upgrade: %v", err)
+	}
+	if !strings.Contains(out.String(), "brew upgrade mise") {
+		t.Fatalf("external mise must hint brew:\n%s", out.String())
 	}
 }

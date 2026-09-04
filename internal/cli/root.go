@@ -63,6 +63,7 @@ func Execute(version string) error {
 		Git:  func(dir string) usecase.EnvRepoIface { return usecase.NewEngine(gitrepo.New(runner, dir)) },
 		Gh:   gitrepo.NewGitHub(runner, home),
 	}
+	f.MisonVersion = version
 	term := NewTermUI(os.Stdout, os.Stdin)
 	f.UI = term
 	f.Ask = term

@@ -150,6 +150,8 @@ type Flows struct {
 	Shell string
 	// NoShellSetup disables rc-file modification (--no-shell-setup).
 	NoShellSetup bool
+	// MisonVersion is the running binary's version (status header).
+	MisonVersion string
 	// Account pins the GitHub account this machine's env belongs to
 	// (--account); stored to ~/.mison/config.toml and enforced before
 	// gh-backed push/pull operations.
@@ -164,6 +166,7 @@ type MiseRepoIface interface {
 	ListInstalled() ([]miserepo.Entry, error)
 	BumpDryRun() ([]miserepo.BumpCandidate, error)
 	Doctor() []string
+	Version() (string, error)
 }
 
 // EnvRepoIface is the environment-repository surface flows depend on
@@ -601,6 +604,12 @@ func (f *Flows) RunStatus() error {
 
 	r := f.UI
 	r.Line("Environment status")
+	header := f.stackHeader()
+	if v, err := f.Mise.Version(); err == nil && v != "" && !versionAtLeast(v, MinMiseVersion) {
+		r.Warn(header + " — mise " + v + " is older than mison supports (≥" + MinMiseVersion + "); update mise")
+	} else {
+		r.Line(header)
+	}
 	f.renderSyncStatus()
 	var missing int
 	for _, o := range skipped {
@@ -627,6 +636,52 @@ func (f *Flows) RunStatus() error {
 	f.warnNonPortable(declared)
 	f.reportDoctorProblems()
 	return nil
+}
+
+// MinMiseVersion is the oldest mise whose behavior mison's contracts
+// were verified against (lock symlink adoption, --bump --json, one-off
+// install semantics).
+const MinMiseVersion = "2026.8.0"
+
+// versionAtLeast compares CalVer strings numerically per segment.
+func versionAtLeast(got, floor string) bool {
+	parse := func(v string) []int {
+		var out []int
+		for _, seg := range strings.Split(v, ".") {
+			n := 0
+			for _, ch := range seg {
+				if ch < '0' || ch > '9' {
+					return nil
+				}
+				n = n*10 + int(ch-'0')
+			}
+			out = append(out, n)
+		}
+		return out
+	}
+	a, b := parse(got), parse(floor)
+	if len(a) == 0 || len(b) == 0 {
+		return false
+	}
+	for i := range b {
+		var av int
+		if i < len(a) {
+			av = a[i]
+		}
+		if av != b[i] {
+			return av > b[i]
+		}
+	}
+	return true
+}
+
+// stackHeader renders the mison/mise version line for status.
+func (f *Flows) stackHeader() string {
+	mise, err := f.Mise.Version()
+	if err != nil || mise == "" {
+		mise = "?"
+	}
+	return "mison " + f.MisonVersion + " · mise " + mise
 }
 
 // doctorNoise are mise doctor problems that are guaranteed in
