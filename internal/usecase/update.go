@@ -73,11 +73,11 @@ func (f *Flows) RunUpdate(args []string, dryRun bool, policy ConflictPolicy) err
 	}
 
 	bumpArgs := append([]string{"lock", "--global", "--bump"}, names...)
-	if err := f.Mise.Exec(bumpArgs...); err != nil {
+	if err := f.Mise.ExecTTY(bumpArgs...); err != nil {
 		return err
 	}
 	f.UI.Step("Installing new versions")
-	if err := f.Mise.Exec("install"); err != nil {
+	if err := f.Mise.ExecTTY("install"); err != nil {
 		return fmt.Errorf("%w — lockfile not pushed; retry with mison update", err)
 	}
 	f.refreshLock()
@@ -113,7 +113,7 @@ func (f *Flows) RunUpgrade(currentVersion string) error {
 	// mise is the other binary mison depends on — upgrade owns it too
 	// (decision #12's explicit path; sync never touches mise).
 	before, _ := f.Mise.Version()
-	if err := f.Mise.Exec("self-update"); err != nil {
+	if err := f.Mise.ExecTTY("self-update"); err != nil {
 		f.UI.Warn("mise self-update unavailable (" + err.Error() + ") — if mise came from brew: brew upgrade mise")
 		return nil
 	}

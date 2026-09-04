@@ -167,6 +167,7 @@ type MiseRepoIface interface {
 	BumpDryRun() ([]miserepo.BumpCandidate, error)
 	Doctor() []string
 	Version() (string, error)
+	ExecTTY(args ...string) error
 }
 
 // EnvRepoIface is the environment-repository surface flows depend on
@@ -325,7 +326,8 @@ func (f *Flows) makeResolver(policy ConflictPolicy) Resolver {
 func (f *Flows) refreshLock() bool {
 	l := f.layout()
 	before, _ := os.ReadFile(l.MiseLock)
-	if err := f.Mise.Exec("lock", "--global"); err != nil {
+	f.UI.Step("Refreshing lockfile — resolving tools against registries (may take a moment)")
+	if err := f.Mise.ExecTTY("lock", "--global"); err != nil {
 		f.UI.Warn("could not refresh lockfile — will retry on next sync (" + err.Error() + ")")
 		return false
 	}
@@ -557,8 +559,8 @@ func (f *Flows) RunUninstall(args []string, assumeYes bool, policy ConflictPolic
 
 	for _, name := range args {
 		if installed[name] {
-			f.UI.Step(fmt.Sprintf("Removing %s", name))
-			if err := f.Mise.Exec("uninstall", "--all", name); err != nil {
+			f.UI.Line("→ " + name)
+			if err := f.Mise.ExecTTY("uninstall", "--all", name); err != nil {
 				return err
 			}
 		} else {
@@ -839,8 +841,8 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 
 	r := f.UI
 	removeOrphan := func(name string) error {
-		r.Step(fmt.Sprintf("Pruning %s", name))
-		return f.Mise.Exec("uninstall", "--all", name)
+		f.UI.Line("→ " + name)
+		return f.Mise.ExecTTY("uninstall", "--all", name)
 	}
 	pruneAll := func() error {
 		var failed []string

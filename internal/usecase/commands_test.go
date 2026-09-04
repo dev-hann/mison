@@ -90,6 +90,8 @@ func (f *fakeMise) Exec(args ...string) error {
 }
 func (f *fakeMise) Doctor() []string { return f.doctorProblems }
 
+func (f *fakeMise) ExecTTY(args ...string) error { return f.Exec(args...) }
+
 func (f *fakeMise) Version() (string, error) { return f.miseVersion, nil }
 
 func (f *fakeMise) BumpDryRun() ([]miserepo.BumpCandidate, error) {
@@ -745,8 +747,8 @@ func TestUninstallFlowAsksConfirmationBeforeRemoving(t *testing.T) {
 	if len(ask.confirmQs) != 1 || !strings.Contains(ask.confirmQs[0], "Remove node") {
 		t.Errorf("questions = %v, want one 'Remove node...'", ask.confirmQs)
 	}
-	if !rep.has("step:Removing node") {
-		t.Errorf("calls = %v, want removal step after confirmation", rep.calls)
+	if !rep.has("line:→ node") {
+		t.Errorf("calls = %v, want in-flight removal marker after confirmation", rep.calls)
 	}
 	if len(repo.pushes) != 1 {
 		t.Errorf("pushes = %v, want auto-push after confirmed removal", repo.pushes)

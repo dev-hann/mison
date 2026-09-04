@@ -20,7 +20,10 @@ func (f *fakeRunner) Run(_ []string, name string, args ...string) (string, error
 	return "", fmt.Errorf("unexpected command: %s", key)
 }
 
-func (f *fakeRunner) RunTTY(_ []string, _ string, _ ...string) error { return nil }
+func (f *fakeRunner) RunTTY(env []string, name string, args ...string) error {
+	_, err := f.Run(env, name, args...)
+	return err
+}
 
 func TestLatestReleaseTag(t *testing.T) {
 	fr := &fakeRunner{results: map[string]string{

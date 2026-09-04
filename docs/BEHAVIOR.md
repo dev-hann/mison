@@ -7,6 +7,23 @@ changes, update this file in the same commit.
 Test names refer to `internal/usecase/{sync,commands}_test.go` and
 `internal/env/*_test.go` unless noted.
 
+## Progress output (all action phases)
+
+ACTION mise commands stream their native progress to the terminal
+(`miserepo.ExecTTY`, stdio passthrough): install/uninstall download
+and extraction steps, lockfile per-tool resolution lines, mise
+self-update, and the mise.run first-boot installer. Query commands
+(`ls --json`, doctor, version) stay captured — they feed parsers.
+Each streaming attempt is framed by an in-flight `→ <name>` marker;
+lock refresh announces itself BEFORE running (it is registry-bound
+and can take a moment).
+
+| Edge case | Behavior | Test |
+|---|---|---|
+| non-interactive context (CI, scripts) | passthrough output flows into logs; mise disables bars without a TTY | (structural) |
+| streamed command fails | exit error references "output above" — stderr already passed through | TestExecErrorPropagates shape |
+| apply-first first install | mise may print "installed but not activated" (config not yet written) — ignore; mison declares on success | TestInstallFailureDeclaresNothing (ordering) |
+
 ## Common preconditions (every command)
 
 ```
