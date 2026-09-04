@@ -63,12 +63,11 @@ func (m *Repo) RunInstaller() error {
 }
 
 // Exec runs an arbitrary mise command (install, uninstall, prune...).
+// The Runner error is already self-describing (command + stderr) — no
+// re-prefixing.
 func (m *Repo) Exec(args ...string) error {
-	out, err := m.exec(args...)
-	if err != nil {
-		return fmt.Errorf("mise %s: %w — %s", strings.Join(args, " "), err, strings.TrimSpace(out))
-	}
-	return nil
+	_, err := m.exec(args...)
+	return err
 }
 
 // ListInstalled parses `mise ls --current --json` into raw entries.
@@ -77,7 +76,7 @@ func (m *Repo) Exec(args ...string) error {
 func (m *Repo) ListInstalled() ([]Entry, error) {
 	out, err := m.exec("ls", "--current", "--json")
 	if err != nil {
-		return nil, fmt.Errorf("mise ls: %w", err)
+		return nil, err
 	}
 
 	var ls map[string][]lsEntry

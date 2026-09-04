@@ -12,18 +12,13 @@ func newInstallCmd(f *usecase.Flows) *cobra.Command {
 		Short: "Add tools to the environment and install them",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			osFlag, err := osSpecFromFlags(cmd)
-			if err != nil {
-				return err
-			}
 			policy, err := conflictPolicy(cmd)
 			if err != nil {
 				return err
 			}
-			return f.RunInstall(args, osFlag, policy)
+			return f.RunInstall(args, policy)
 		},
 	}
-	addOSFlags(cmd.Flags())
 	addConflictFlags(cmd.Flags())
 	return cmd
 }

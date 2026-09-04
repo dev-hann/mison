@@ -32,7 +32,9 @@ Core workflow:
   mison uninstall <tools> remove tools from the environment
   mison sync              pull latest declaration and apply it
   mison status            compare declaration with installed tools`,
-		Version: version,
+		Version:       version,
+		SilenceUsage:  true, // runtime errors are self-describing; help stays on -h
+		SilenceErrors: true, // main is the single error printer
 	}
 
 	root.AddCommand(
@@ -63,36 +65,6 @@ func Execute(version string) error {
 	f.UI = term
 	f.Ask = term
 	return NewRootCmd(f, version).Execute()
-}
-
-// addOSFlags registers --mac and --linux with optional arch values:
-// --mac, --mac=arm64, --linux, --linux=x64.
-func addOSFlags(fl *pflag.FlagSet) {
-	fl.String("mac", "", "restrict install to macOS")
-	fl.String("linux", "", "restrict install to Linux")
-	fl.Lookup("mac").NoOptDefVal = "macos"
-	fl.Lookup("linux").NoOptDefVal = "linux"
-}
-
-// osSpecFromFlags combines OS flags into a mise os spec ("" = none).
-func osSpecFromFlags(cmd *cobra.Command) (string, error) {
-	mac, _ := cmd.Flags().GetString("mac")
-	linux, _ := cmd.Flags().GetString("linux")
-	if mac != "" && linux != "" {
-		return "", fmt.Errorf("--mac and --linux are mutually exclusive")
-	}
-	for _, pair := range []struct{ flag, val string }{
-		{"mac", mac}, {"linux", linux},
-	} {
-		if pair.val == "" {
-			continue
-		}
-		if pair.val == "macos" || pair.val == "linux" {
-			return pair.val, nil // bare flag, NoOptDefVal
-		}
-		return pair.flag + "/" + pair.val, nil // --mac=arm64 → macos/arm64
-	}
-	return "", nil
 }
 
 // addConflictFlags registers non-interactive conflict resolution.

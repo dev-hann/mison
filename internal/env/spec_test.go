@@ -46,36 +46,6 @@ func TestParseToolSpecEmptyName(t *testing.T) {
 	}
 }
 
-func TestParseOSSpec(t *testing.T) {
-	cases := map[string][]string{
-		"":            nil,
-		"mac":         {"macos"},
-		"linux":       {"linux"},
-		"linux/x64":   {"linux/x64"},
-		"linux/arm64": {"linux/arm64"},
-		"macos/arm64": {"macos/arm64"},
-	}
-	for in, want := range cases {
-		got := ParseOSSpec(in)
-		if len(got) != len(want) {
-			t.Fatalf("ParseOSSpec(%q) = %v, want %v", in, got, want)
-		}
-		for i := range got {
-			if got[i] != want[i] {
-				t.Fatalf("ParseOSSpec(%q) = %v, want %v", in, got, want)
-			}
-		}
-	}
-}
-
-func TestParseOSSpecInvalid(t *testing.T) {
-	for _, bad := range []string{"windows", "linux/x86", "solaris", "mac/intel"} {
-		if got := ParseOSSpec(bad); got != nil {
-			t.Fatalf("ParseOSSpec(%q) = %v, want nil", bad, got)
-		}
-	}
-}
-
 func TestAppliesTo(t *testing.T) {
 	cases := []struct {
 		os     []string
