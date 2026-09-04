@@ -50,7 +50,18 @@ MISON_VERSION=v0.5.2 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison
 ```
 
 The installer detects your OS/architecture, downloads the release
-binary, and verifies its checksum. Prefer reviewing first?
+binary, verifies its checksum, and adds `~/.local/bin` to your shell
+rc automatically (opt out with `--skip-shell`; skipped in CI). mise
+activation is wired later by `mison init`.
+
+Optional — shell completion:
+
+```bash
+# zsh
+mison completion zsh > "${fpath[1]}/_mison"
+```
+
+Prefer reviewing first?
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh -o install.sh

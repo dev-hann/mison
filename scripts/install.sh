@@ -72,9 +72,30 @@ chmod +x "${BIN_DIR}/mison"
 
 log "installed to ${BIN_DIR}/mison"
 
-case ":$PATH:" in
-  *":${BIN_DIR}:"*) ;;
-  *) printf 'mison: note: %s is not on your PATH\n' "$BIN_DIR" >&2 ;;
-esac
+# --- shell wiring (fnm pattern, grep-idempotent) ----------------------
+# Adds ~/.local/bin to PATH in the user's shell rc. Opt out with
+# --skip-shell or MISON_SKIP_SHELL=1; skipped automatically in CI.
+# (mise activation is NOT wired here — mise does not exist until
+# `mison init` installs it; init adds that line itself.)
+MISON_SKIP_SHELL="${MISON_SKIP_SHELL:-}"
+[ "${1-}" = "--skip-shell" ] && MISON_SKIP_SHELL=1
+[ -n "${CI-}" ] && MISON_SKIP_SHELL=1
 
-log "next: mison init   (installs mise, links GitHub, wires your shell)"
+if [ -z "$MISON_SKIP_SHELL" ]; then
+  RC=""
+  case "$(basename "${SHELL:-}")" in
+    zsh)  RC="${ZDOTDIR:-$HOME}/.zshrc" ;;
+    bash) if [ "$(uname -s)" = "Darwin" ]; then RC="$HOME/.bash_profile"; else RC="$HOME/.bashrc"; fi ;;
+  esac
+  if [ -z "$RC" ]; then
+    log "note: add ${BIN_DIR} to your PATH manually (unsupported shell: ${SHELL:-unknown})"
+  elif grep -q '\.local/bin' "$RC" 2>/dev/null; then
+    log "PATH already wired in ${RC}"
+  else
+    mkdir -p "$(dirname "$RC")"
+    printf '\n# mison (installer)\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
+    log "added ~/.local/bin to PATH in ${RC} — open a new terminal to use mison"
+  fi
+fi
+
+log "next: mison init   (installs mise, links GitHub, activates mise in your shell)"

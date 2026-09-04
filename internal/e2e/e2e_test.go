@@ -181,3 +181,59 @@ func TestMiseInstallOneOffDoesNotDeclare(t *testing.T) {
 		t.Fatalf("mise install name@version must not modify config: %v\n%s", err, after)
 	}
 }
+
+// TestInstallerWiresShellPath runs the real installer against a temp
+// HOME (zsh) and asserts the rc wiring: appended once, idempotent on
+// rerun, and absent with --skip-shell / CI.
+func TestInstallerWiresShellPath(t *testing.T) {
+	// run the LOCAL script — this test guards uncommitted changes too
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(wd, "..", "..", "scripts", "install.sh")
+	home := t.TempDir()
+	rc := filepath.Join(home, ".zshrc")
+	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "SHELL=/bin/zsh", "CI="}
+
+	run := func(extra ...string) {
+		args := append([]string{script}, extra...)
+		cmd := exec.Command("sh", args...)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("installer: %v\n%s", err, out)
+		}
+	}
+
+	// CI= in env means NOT CI — append must happen
+	run()
+	data, err := os.ReadFile(rc)
+	if err != nil || !strings.Contains(string(data), `export PATH="$HOME/.local/bin:$PATH"`) {
+		t.Fatalf("rc must gain the PATH block: %v\n%s", err, data)
+	}
+
+	// rerun: idempotent
+	run()
+	data, _ = os.ReadFile(rc)
+	if got := strings.Count(string(data), "mison (installer)"); got != 1 {
+		t.Fatalf("block must appear exactly once, got %d:\n%s", got, data)
+	}
+
+	// pre-wired rc: no append
+	os.Remove(rc)
+	if err := os.WriteFile(rc, []byte("export PATH=\"$HOME/.local/bin:$PATH\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	data, _ = os.ReadFile(rc)
+	if strings.Contains(string(data), "mison (installer)") {
+		t.Fatalf("already-wired rc must stay untouched:\n%s", data)
+	}
+
+	// --skip-shell: no rc file at all
+	os.Remove(rc)
+	run("--skip-shell")
+	if _, err := os.Stat(rc); !os.IsNotExist(err) {
+		t.Fatal("--skip-shell must not create the rc file")
+	}
+}
