@@ -1,0 +1,25 @@
+.github/workflows/release.yml | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+Changes:
+
+.github/workflows/release.yml
+  @@ -20,8 +20,19 @@ jobs:
+  +      - uses: jdx/mise-action@v2
+  +        with:
+  +          install: true
+  +        env:
+  +          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  +
+  +      # the release gate runs the full suite INCLUDING the e2e contracts
+  +      # against real mise (lock determinism/symlink clobber, one-off
+  +      # install semantics) — mise-behavior drift must block a release
+         - name: Test
+  -        run: go test ./...
+  +        run: |
+  +          go test ./...
+  +          go test -tags e2e ./internal/e2e/
+   
+         - uses: goreleaser/goreleaser-action@v6
+           with:
+  +12 -1
