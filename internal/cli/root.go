@@ -32,7 +32,9 @@ Core workflow:
   mison uninstall <tools> remove tools from the environment
   mison sync              pull latest declaration and apply it
   mison status            compare declaration with installed tools`,
-		Version: version,
+		Version:       version,
+		SilenceUsage:  true, // runtime errors are self-describing; help stays on -h
+		SilenceErrors: true, // main is the single error printer
 	}
 
 	root.AddCommand(
