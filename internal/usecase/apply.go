@@ -97,9 +97,11 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// attemptTool installs a declared tool at its config version.
+// attemptTool installs a declared tool at its config version; mise's
+// native progress streams (ExecTTY) framed by an in-flight marker.
 func (f *Flows) attemptTool(t env.Tool) ToolOutcome {
-	if err := f.Mise.Exec("install", t.Name); err != nil {
+	f.UI.Line("→ " + t.Name)
+	if err := f.Mise.ExecTTY("install", t.Name); err != nil {
 		return ToolOutcome{Tool: t, Result: Failed, Detail: err.Error()}
 	}
 	return ToolOutcome{Tool: t, Result: Applied}
@@ -109,7 +111,8 @@ func (f *Flows) attemptTool(t env.Tool) ToolOutcome {
 // nothing is declared yet, so the version rides the command line).
 func (f *Flows) attemptSpec(name, version string) ToolOutcome {
 	tool := env.Tool{Name: name, Version: version}
-	if err := f.Mise.Exec("install", name+"@"+version); err != nil {
+	f.UI.Line("→ " + name)
+	if err := f.Mise.ExecTTY("install", name+"@"+version); err != nil {
 		return ToolOutcome{Tool: tool, Result: Failed, Detail: err.Error()}
 	}
 	return ToolOutcome{Tool: tool, Result: Applied}

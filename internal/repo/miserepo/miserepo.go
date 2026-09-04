@@ -53,11 +53,12 @@ func (m *Repo) Version() (string, error) {
 	return fields[0], nil
 }
 
-// RunInstaller runs the official mise.run installer script.
+// RunInstaller runs the official mise.run installer script with
+// passthrough — its download progress is the only feedback during a
+// first boot.
 func (m *Repo) RunInstaller() error {
-	out, err := m.r.Run(service.MiseEnv(m.home), "sh", "-c", "curl -fsSL https://mise.run | sh")
-	if err != nil {
-		return fmt.Errorf("install mise: %w — %s", err, strings.TrimSpace(out))
+	if err := m.r.RunTTY(service.MiseEnv(m.home), "sh", "-c", "curl -fsSL https://mise.run | sh"); err != nil {
+		return fmt.Errorf("install mise: %w (output above)", err)
 	}
 	return nil
 }
@@ -68,6 +69,16 @@ func (m *Repo) RunInstaller() error {
 func (m *Repo) Exec(args ...string) error {
 	_, err := m.exec(args...)
 	return err
+}
+
+// ExecTTY runs an ACTION mise command with stdio passthrough so mise's
+// native progress (download bars, resolution lines) streams to the
+// user. Query commands stay on Exec — their output feeds parsers.
+func (m *Repo) ExecTTY(args ...string) error {
+	if err := m.r.RunTTY(service.MiseEnv(m.home), "mise", args...); err != nil {
+		return fmt.Errorf("mise %s: %w (output above)", strings.Join(args, " "), err)
+	}
+	return nil
 }
 
 // BumpCandidate is one fuzzy-selector re-resolution offered by

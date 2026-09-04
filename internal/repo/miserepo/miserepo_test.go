@@ -28,8 +28,9 @@ func (f *fakeRunner) Run(env []string, name string, args ...string) (string, err
 	return out, nil
 }
 
-func (f *fakeRunner) RunTTY(_ []string, _ string, _ ...string) error {
-	return nil
+func (f *fakeRunner) RunTTY(env []string, name string, args ...string) error {
+	_, err := f.Run(env, name, args...)
+	return err
 }
 
 func TestIsInstalled(t *testing.T) {
