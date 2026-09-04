@@ -1674,3 +1674,15 @@ func TestRunUpgradeRefusesDevBuild(t *testing.T) {
 		t.Fatal("no installer run for dev builds")
 	}
 }
+
+func TestRunUpgradeVPrefixNormalizes(t *testing.T) {
+	f, _, out := newTestFlows(t)
+	f.Gh = &fakeGh{latestTag: "v0.5.0"}
+
+	if err := f.RunUpgrade("0.5.0"); err != nil {
+		t.Fatalf("RunUpgrade() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "up to date") {
+		t.Fatalf("v-prefixed latest must match bare current:\\n%s", out.String())
+	}
+}

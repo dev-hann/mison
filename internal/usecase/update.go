@@ -95,7 +95,10 @@ func (f *Flows) RunUpgrade(currentVersion string) error {
 	if err != nil {
 		return err
 	}
-	if latest == currentVersion {
+	// goreleaser injects "0.5.0" (no v); the API returns "v0.5.0" —
+	// normalize before comparing so equal versions aren't reinstalled
+	trim := func(v string) string { return strings.TrimPrefix(v, "v") }
+	if trim(latest) == trim(currentVersion) {
 		f.UI.Step("mison is up to date (" + currentVersion + ")")
 		return nil
 	}
