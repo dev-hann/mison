@@ -56,15 +56,80 @@ func (f *Flows) resolveRepoName(flagged string) string {
 	return DefaultRepoName
 }
 
-func (f *Flows) persistRepoName(name string) {
-	if name == "" {
+// resolveAccount reads the pinned GitHub account ("" = unpinned).
+func (f *Flows) resolveAccount() string {
+	data, err := os.ReadFile(f.repoConfigPath())
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "account = "); ok {
+			return strings.Trim(v, `"`)
+		}
+	}
+	return ""
+}
+
+// persistAccount records (or replaces) the pinned account while
+// preserving the repo binding, and vice versa.
+func (f *Flows) persistAccount(account string) {
+	f.persistMisonConfig("account", account)
+}
+
+// persistMisonConfig sets one key ("repo" / "account") in
+// ~/.mison/config.toml, keeping the other intact.
+func (f *Flows) persistMisonConfig(key, value string) {
+	if value == "" {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(f.repoConfigPath()), 0o755); err != nil {
 		return
 	}
-	content := "# managed by mison\nrepo = " + strconv.Quote(name) + "\n"
+	other := "repo"
+	if key == "repo" {
+		other = "account"
+	}
+	otherVal := ""
+	if data, err := os.ReadFile(f.repoConfigPath()); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(line), other+" = "); ok {
+				otherVal = strings.Trim(v, `"`)
+			}
+		}
+	}
+	content := "# managed by mison\n"
+	if otherVal != "" {
+		content += other + " = " + strconv.Quote(otherVal) + "\n"
+	}
+	content += key + " = " + strconv.Quote(value) + "\n"
 	_ = os.WriteFile(f.repoConfigPath(), []byte(content), 0o644)
+}
+
+// ensureAccount refuses gh-backed operations when the ACTIVE gh
+// account is not the one this machine is bound to — a flipped active
+// account silently created env repos under the wrong owner more than
+// once. Unverifiable (offline) degrades to a warning so deferred
+// pushes still work.
+func (f *Flows) ensureAccount() error {
+	want := f.resolveAccount()
+	if want == "" {
+		return nil
+	}
+	got, err := f.Gh.Whoami()
+	if err != nil {
+		f.UI.Warn("could not verify GitHub account (" + err.Error() + ") — continuing")
+		return nil
+	}
+	if got != want {
+		msg := fmt.Sprintf("GitHub account is %q, this machine is bound to %q — run: gh auth switch -u %s", got, want, want)
+		f.UI.Fail(msg)
+		return fmt.Errorf("gh account mismatch: active %q, bound %q — gh auth switch -u %s", got, want, want)
+	}
+	return nil
+}
+
+func (f *Flows) persistRepoName(name string) {
+	f.persistMisonConfig("repo", name)
 }
 
 // Flows carries the dependencies for mison's command flows. All fields
@@ -83,6 +148,10 @@ type Flows struct {
 	Shell string
 	// NoShellSetup disables rc-file modification (--no-shell-setup).
 	NoShellSetup bool
+	// Account pins the GitHub account this machine's env belongs to
+	// (--account); stored to ~/.mison/config.toml and enforced before
+	// gh-backed push/pull operations.
+	Account string
 }
 
 // MiseRepoIface is the mise surface flows depend on.
@@ -288,6 +357,9 @@ func (f *Flows) commitAndPush(message string, policy ConflictPolicy) error {
 	repo := f.envRepo()
 	if !repo.IsRepo() {
 		return nil
+	}
+	if err := f.ensureAccount(); err != nil {
+		return err
 	}
 	merged, err := repo.SmartPush(message, f.makeResolver(policy))
 	if err != nil {
@@ -600,6 +672,9 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	}
 
 	if repo := f.envRepo(); repo.IsRepo() {
+		if err := f.ensureAccount(); err != nil {
+			return err
+		}
 		f.UI.Step("Pulling environment")
 		merged, err := repo.SmartPull(f.makeResolver(policy))
 		switch {
@@ -753,8 +828,12 @@ func (f *Flows) RunInit(repoName string) error {
 	// surface the ACTIVE gh account before anything is created — with
 	// multiple accounts logged in, gh operates as whichever is active,
 	// and silently creating the env repo under the wrong one is costly
-	if login, err := f.Gh.Whoami(); err == nil && login != "" {
+	login, whoErr := f.Gh.Whoami()
+	if whoErr == nil && login != "" {
 		r.Line("GitHub account: " + login)
+	}
+	if f.Account != "" && whoErr == nil && login != f.Account {
+		return fmt.Errorf("GitHub account is %q but --account pins %q — run: gh auth switch -u %s", login, f.Account, f.Account)
 	}
 
 	explicit := repoName != ""
@@ -763,6 +842,7 @@ func (f *Flows) RunInit(repoName string) error {
 		return err
 	}
 	f.persistRepoName(repoName)
+	f.persistAccount(f.Account)
 
 	cfg, err := f.loadConfig()
 	if err != nil {

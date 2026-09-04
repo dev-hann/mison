@@ -157,6 +157,7 @@ type fakeGh struct {
 	url       string
 	createErr error
 	whoami    string
+	whoamiErr error
 	// existsFlip: when set, the first RepoExists call returns false and
 	// later calls return exists — simulates a create race.
 	existsFlip bool
@@ -165,7 +166,7 @@ type fakeGh struct {
 
 func (f *fakeGh) IsInstalled() bool       { return f.installed }
 func (f *fakeGh) AuthStatus() bool        { return f.authed }
-func (f *fakeGh) Whoami() (string, error) { return f.whoami, nil }
+func (f *fakeGh) Whoami() (string, error) { return f.whoami, f.whoamiErr }
 func (f *fakeGh) AuthLogin() error        { f.authed = true; return nil }
 func (f *fakeGh) SetupGit() error         { return nil }
 func (f *fakeGh) RepoExists(string) bool {
@@ -1431,5 +1432,91 @@ func TestInitNoShellSetupSkips(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "Add mise to your shell") {
 		t.Fatalf("opt-out must stay silent about shell setup:\n%s", out.String())
+	}
+}
+
+func TestRunInitStoresAccount(t *testing.T) {
+	f, _, _ := newTestFlows(t)
+	f.Account = "dev-hann"
+	f.Gh = &fakeGh{installed: true, authed: true, whoami: "dev-hann"}
+
+	if err := f.RunInit(DefaultRepoName); err != nil {
+		t.Fatalf("RunInit() error = %v", err)
+	}
+	data, err := os.ReadFile(f.repoConfigPath())
+	if err != nil || !strings.Contains(string(data), `account = "dev-hann"`) {
+		t.Fatalf("account must persist to config.toml: %v %q", err, data)
+	}
+}
+
+func TestPushRefusesOnAccountMismatch(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, _, out := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true, whoami: "hann-yun"}
+	if err := os.MkdirAll(filepath.Dir(f.repoConfigPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.repoConfigPath(), []byte("repo = \"mison-env\"\naccount = \"dev-hann\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := f.RunInstall([]string{"node"}, PolicyAsk)
+	if err == nil || !strings.Contains(err.Error(), "gh auth switch") {
+		t.Fatalf("mismatched account must refuse the push with switch hint: %v", err)
+	}
+	if !strings.Contains(out.String(), "✗") {
+		t.Fatalf("must report via Fail port:\n%s", out.String())
+	}
+	for _, p := range repo.pushes {
+		if strings.Contains(p, "install") {
+			t.Fatal("no push may happen under the wrong account")
+		}
+	}
+}
+
+func TestPushContinuesWhenAccountUnverifiable(t *testing.T) {
+	repo := &fakeRepo{isRepo: true}
+	f, _, out := newTestFlowsWith(t, repo)
+	f.Gh = &fakeGh{installed: true, authed: true, whoamiErr: errors.New("offline")}
+	if err := os.MkdirAll(filepath.Dir(f.repoConfigPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.repoConfigPath(), []byte("account = \"dev-hann\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
+		t.Fatalf("offline account check must degrade to a warning: %v", err)
+	}
+	if len(repo.pushes) != 1 || repo.pushes[0] != "install: node" {
+		t.Fatalf("push must proceed: %v", repo.pushes)
+	}
+	if !strings.Contains(out.String(), "could not verify GitHub account") {
+		t.Fatalf("degradation must warn:\n%s", out.String())
+	}
+}
+
+func TestSyncPullGatedByAccount(t *testing.T) {
+	f, _, _ := newTestFlows(t)
+	ask := &fakeAsk{}
+	f.Ask = ask
+	if _, err := f.layout().Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	f.Gh = &fakeGh{installed: true, authed: true, whoami: "hann-yun"}
+	if err := os.MkdirAll(filepath.Dir(f.repoConfigPath()), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.repoConfigPath(), []byte("account = \"dev-hann\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := &fakeRepo{isRepo: true, pullErr: nil}
+	f.Git = func(string) EnvRepoIface { return repo }
+
+	if err := f.RunSync(false, PolicyAsk); err == nil || !strings.Contains(err.Error(), "gh auth switch") {
+		t.Fatalf("sync pull must refuse under wrong account: %v", err)
+	}
+	if repo.pulls != 0 {
+		t.Fatalf("no pull may happen: %d", repo.pulls)
 	}
 }
