@@ -320,18 +320,17 @@ func tool(name, version string) env.Tool {
 
 // RunInstall implements the install flow: declare tools, apply them,
 // verify visibility, push the declaration.
-func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) error {
+// RunInstall implements apply-first registration: every tool is
+// installed before anything is declared — only what installed locally
+// earns a declaration entry (DESIGN #17). Failures are reported as
+// outcomes, never half-declared.
+func (f *Flows) RunInstall(args []string, policy ConflictPolicy) error {
 	guard, err := f.acquireRunLock()
 	if err != nil {
 		f.UI.Fail(err.Error())
 		return err
 	}
 	defer guard.Release()
-
-	osSpec := env.ParseOSSpec(osFlag)
-	if osFlag != "" && osSpec == nil {
-		return fmt.Errorf("invalid OS spec %q (use mac, linux, linux/x64, linux/arm64, macos/arm64)", osFlag)
-	}
 
 	if _, err := f.layout().Ensure(); err != nil {
 		return err
@@ -345,39 +344,48 @@ func (f *Flows) RunInstall(args []string, osFlag string, policy ConflictPolicy) 
 		return err
 	}
 
-	names := make([]string, 0, len(args))
-	var tools []env.Tool
+	specNames := make([]string, 0, len(args))
 	for _, spec := range args {
-		name, version, err := env.ParseToolSpec(spec)
-		if err != nil {
+		if _, _, err := env.ParseToolSpec(spec); err != nil {
 			return err
 		}
-		t := env.Tool{Name: name, Version: version, OS: osSpec}
+		specNames = append(specNames, spec)
+	}
+
+	f.UI.Step(fmt.Sprintf("Installing %s", strings.Join(specNames, ", ")))
+	var outcomes []ToolOutcome
+	var applied []env.Tool
+	for _, spec := range args {
+		name, version, _ := env.ParseToolSpec(spec)
+		o := f.attemptSpec(name, version)
+		outcomes = append(outcomes, o)
+		if o.Result == Applied {
+			applied = append(applied, o.Tool)
+		}
+	}
+	failed := f.reportOutcomes(outcomes)
+	if len(applied) == 0 {
+		f.UI.Fail("nothing installed — nothing declared")
+		return fmt.Errorf("install failed for every tool — nothing declared")
+	}
+
+	names := make([]string, 0, len(applied))
+	for _, t := range applied {
 		cfg.SetTool(t)
-		tools = append(tools, t)
-		names = append(names, name)
+		names = append(names, t.Name)
 	}
 	if err := f.saveConfig(cfg); err != nil {
 		return err
 	}
-
-	info := f.detect()
-	skipped := map[string]bool{}
-	for _, t := range tools {
-		if len(t.OS) > 0 && !t.AppliesTo(info.OS, info.Arch) {
-			skipped[t.Name] = true
-			f.UI.Warn(fmt.Sprintf("%s: restricted to %s — skipped on this machine (%s/%s)",
-				t.Name, strings.Join(t.OS, ", "), info.OS, info.Arch))
-		}
-	}
-
-	f.UI.Step(fmt.Sprintf("Installing %s", strings.Join(names, ", ")))
-	if err := f.Mise.Exec("install"); err != nil {
-		return fmt.Errorf("%w — declaration saved; drop broken tools with mison uninstall <tool>", err)
-	}
-	f.verifyVisible(names, skipped)
+	f.verifyVisible(names, nil)
 	f.refreshLock()
-	return f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy)
+	if err := f.commitAndPush(fmt.Sprintf("install: %s", strings.Join(names, ", ")), policy); err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d tool(s) failed to install — not declared", failed)
+	}
+	return nil
 }
 
 // verifyVisible warns when tools mison just installed are not reported
@@ -512,12 +520,16 @@ func (f *Flows) RunStatus() error {
 	}
 
 	declared := cfg.Tools()
-	diff := env.Diff(declared, installed)
+	inScope, skipped := f.platformScope(declared)
+	diff := env.Diff(inScope, installed)
 
 	r := f.UI
 	r.Line("Environment status")
 	f.renderSyncStatus()
 	var missing int
+	for _, o := range skipped {
+		r.ToolLine(ui.MarkWarning, o.Tool.Name, "not for this platform ("+o.Detail+")")
+	}
 	for _, st := range diff {
 		switch st.State {
 		case env.StateOK:
@@ -610,7 +622,14 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 		return err
 	}
 
-	diff := env.Diff(declared, installed)
+	// platform scope first: tools the lock proves unavailable here are
+	// never attempted (and never count as missing)
+	inScope, skippedOutcomes := f.platformScope(declared)
+	for _, o := range skippedOutcomes {
+		f.UI.ToolLine(ui.MarkWarning, o.Tool.Name, "not for this platform ("+o.Detail+")")
+	}
+
+	diff := env.Diff(inScope, installed)
 	var needsApply bool
 	for _, st := range diff {
 		if st.State != env.StateOK {
@@ -620,10 +639,18 @@ func (f *Flows) RunSync(prune bool, policy ConflictPolicy) error {
 	}
 	if needsApply {
 		f.UI.Step("Installing declared tools")
-		if err := f.Mise.Exec("install"); err != nil {
-			return fmt.Errorf("%w — drop broken tools with mison uninstall <tool>", err)
+		var outcomes []ToolOutcome
+		for _, st := range diff {
+			if st.State == env.StateOK {
+				continue
+			}
+			outcomes = append(outcomes, f.attemptTool(st.Tool))
 		}
-		f.verifyDeclaredApplied(declared)
+		failed := f.reportOutcomes(outcomes)
+		if failed > 0 {
+			f.UI.Warn(fmt.Sprintf("%d tool(s) failed to apply — declaration kept; drop broken tools with mison uninstall <tool>", failed))
+		}
+		f.verifyDeclaredApplied(inScope)
 		f.warnNonPortable(declared)
 	}
 
@@ -737,10 +764,22 @@ func (f *Flows) RunInit(repoName string) error {
 	}
 	f.persistRepoName(repoName)
 
-	r.Step("Installing declared tools")
-	if err := f.Mise.Exec("install"); err != nil {
+	cfg, err := f.loadConfig()
+	if err != nil {
 		return err
 	}
+	declared := cfg.Tools()
+
+	r.Step("Installing declared tools")
+	inScope, skippedOutcomes := f.platformScope(declared)
+	var outcomes []ToolOutcome
+	for _, t := range inScope {
+		outcomes = append(outcomes, f.attemptTool(t))
+	}
+	outcomes = append(outcomes, skippedOutcomes...)
+	f.reportOutcomes(outcomes)
+	f.warnNonPortable(declared)
+
 	if f.refreshLock() {
 		r.Step("Refreshing lockfile")
 		if err := f.commitAndPush("mison: refresh lock", PolicyAsk); err != nil {

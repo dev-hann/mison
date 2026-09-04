@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -276,7 +275,7 @@ func readToml(t *testing.T, f *Flows) string {
 func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 	f, fm, out := newTestFlows(t)
 
-	if err := f.RunInstall([]string{"node@22", "go"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22", "go"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 
@@ -287,7 +286,7 @@ func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 	if !strings.Contains(toml, `go = "latest"`) {
 		t.Errorf("mise.toml missing go latest:\n%s", toml)
 	}
-	want := []string{"install", "lock --global"}
+	want := []string{"install node@22", "install go@latest", "lock --global"}
 	if len(fm.execCalls) != len(want) {
 		t.Fatalf("exec calls = %v, want %v", fm.execCalls, want)
 	}
@@ -296,26 +295,14 @@ func TestRunInstallWritesDeclarationAndApplies(t *testing.T) {
 			t.Errorf("exec calls = %v, want %v", fm.execCalls, want)
 		}
 	}
-	if !strings.Contains(out.String(), "Installing node, go") {
+	if !strings.Contains(out.String(), "Installing node@22, go") {
 		t.Errorf("output = %q", out.String())
-	}
-}
-
-func TestRunInstallWithOSSpec(t *testing.T) {
-	f, _, _ := newTestFlows(t)
-
-	if err := f.RunInstall([]string{"docker"}, "linux", PolicyAsk); err != nil {
-		t.Fatalf("RunInstall() error = %v", err)
-	}
-	toml := readToml(t, f)
-	if !strings.Contains(toml, `os = ["linux"]`) {
-		t.Errorf("mise.toml missing os restriction:\n%s", toml)
 	}
 }
 
 func TestRunInstallInvalidSpec(t *testing.T) {
 	f, _, _ := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@"}, "", PolicyAsk); err == nil {
+	if err := f.RunInstall([]string{"node@"}, PolicyAsk); err == nil {
 		t.Fatal("RunInstall() expected error for node@")
 	}
 }
@@ -324,7 +311,7 @@ func TestRunInstallInstallsMiseWhenMissing(t *testing.T) {
 	f, fm, out := newTestFlows(t)
 	f.Look = func(string) (string, error) { return "", errors.New("not found") }
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if !fm.installDone {
@@ -337,7 +324,7 @@ func TestRunInstallInstallsMiseWhenMissing(t *testing.T) {
 
 func TestRunInstallCreatesSymlink(t *testing.T) {
 	f, _, _ := newTestFlows(t)
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	target, err := os.Readlink(filepath.Join(f.Home, ".config", "mise", "config.toml"))
@@ -352,7 +339,7 @@ func TestRunInstallCreatesSymlink(t *testing.T) {
 func TestRunUninstallRemovesDeclarationAndTool(t *testing.T) {
 	f, fm, _ := newTestFlows(t)
 	f.Ask = &fakeAsk{confirm: true}
-	if err := f.RunInstall([]string{"node", "go"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node", "go"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.11.0", "go", "1.25.1")
@@ -377,7 +364,7 @@ func TestRunUninstallRemovesDeclarationAndTool(t *testing.T) {
 func TestRunUninstallAbortsWhenDeclined(t *testing.T) {
 	f, _, _ := newTestFlows(t)
 	f.Ask = &fakeAsk{confirm: false}
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 
@@ -393,7 +380,7 @@ func TestRunUninstallAbortsWhenDeclined(t *testing.T) {
 func TestRunUninstallUnknownTool(t *testing.T) {
 	f, _, _ := newTestFlows(t)
 	f.Ask = &fakeAsk{confirm: true}
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.RunUninstall([]string{"python"}, false, PolicyAsk); err == nil {
@@ -403,7 +390,7 @@ func TestRunUninstallUnknownTool(t *testing.T) {
 
 func TestRunStatusRendersStates(t *testing.T) {
 	f, fm, out := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22", "go@1.25", "python@3.13"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22", "go@1.25", "python@3.13"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.11.0", "go", "1.24.0")
@@ -426,7 +413,7 @@ func TestRunStatusRendersStates(t *testing.T) {
 
 func TestRunSyncAppliesMissing(t *testing.T) {
 	f, fm, out := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.execCalls = nil
@@ -445,7 +432,7 @@ func TestRunSyncAppliesMissing(t *testing.T) {
 
 func TestRunSyncNoopWhenAligned(t *testing.T) {
 	f, fm, out := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.11.0")
@@ -464,7 +451,7 @@ func TestRunSyncNoopWhenAligned(t *testing.T) {
 
 func TestRunSyncPruneRemovesOrphans(t *testing.T) {
 	f, fm, _ := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.11.0", "ripgrep", "14.1.0")
@@ -489,7 +476,7 @@ func TestRunSyncWithoutEnvironment(t *testing.T) {
 
 func TestRunSyncRestoresGlobalSymlink(t *testing.T) {
 	f, fm, _ := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	// simulate a machine that got the env dir by cloning: symlink removed
@@ -506,26 +493,11 @@ func TestRunSyncRestoresGlobalSymlink(t *testing.T) {
 	}
 }
 
-func TestRunInstallWarnsOSSkip(t *testing.T) {
-	f, _, out := newTestFlows(t)
-	opposite := "linux"
-	if runtime.GOOS == "linux" {
-		opposite = "macos"
-	}
-
-	if err := f.RunInstall([]string{"docker"}, opposite, PolicyAsk); err != nil {
-		t.Fatalf("RunInstall() error = %v", err)
-	}
-	if !strings.Contains(out.String(), "docker: restricted to "+opposite+" — skipped on this machine") {
-		t.Errorf("missing OS skip warning:\n%s", out.String())
-	}
-}
-
 func TestRunInstallWarnsStillMissing(t *testing.T) {
 	f, _, out := newTestFlows(t)
 	// fakeMise installs nothing, so node stays missing after Exec
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if !strings.Contains(out.String(), "node not visible to mise") {
@@ -535,7 +507,7 @@ func TestRunInstallWarnsStillMissing(t *testing.T) {
 
 func TestRunSyncWarnsStillMissing(t *testing.T) {
 	f, fm, out := newTestFlows(t)
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.execCalls = nil
@@ -552,7 +524,7 @@ func TestInstallPushesWhenRepoConnected(t *testing.T) {
 	repo := &fakeRepo{isRepo: true}
 	f, _, _ := newTestFlowsWith(t, repo)
 
-	if err := f.RunInstall([]string{"node@22"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node@22"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if len(repo.pushes) != 1 || repo.pushes[0] != "install: node" {
@@ -564,7 +536,7 @@ func TestInstallShowsRemoteMergeNotice(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, mergedOn: []string{"go"}}
 	f, _, out := newTestFlowsWith(t, repo)
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if !strings.Contains(out.String(), "↻ Remote had new changes (go) — merged automatically") {
@@ -576,7 +548,7 @@ func TestInstallDeferredPushOnFailure(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, pushErr: errors.New("network unreachable")}
 	f, _, out := newTestFlowsWith(t, repo)
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() should not fail when push fails: %v", err)
 	}
 	if !strings.Contains(out.String(), "could not push") {
@@ -588,7 +560,7 @@ func TestUninstallPushes(t *testing.T) {
 	repo := &fakeRepo{isRepo: true}
 	f, fm, _ := newTestFlowsWith(t, repo)
 	f.Ask = &fakeAsk{confirm: true}
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.1.0")
@@ -605,7 +577,7 @@ func TestUninstallPushes(t *testing.T) {
 func TestSyncPullsBeforeApply(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, mergedOn: []string{"node"}}
 	f, fm, out := newTestFlowsWith(t, repo)
-	if err := f.RunInstall([]string{"rg"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"rg"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	repo.pushes = nil
@@ -737,7 +709,7 @@ func TestUninstallFlowAsksConfirmationBeforeRemoving(t *testing.T) {
 	rep, ask := wireFakes(f)
 	ask.confirm = true
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	fm.setInstalled("node", "22.1.0")
@@ -763,7 +735,7 @@ func TestUninstallFlowDeclinedStopsBeforeAnyChange(t *testing.T) {
 	rep, ask := wireFakes(f)
 	ask.confirm = false
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	rep.calls = nil
@@ -784,7 +756,7 @@ func TestSyncFlowNotifiesRemoteMergeViaSyncedPort(t *testing.T) {
 	f, _, _ := newTestFlowsWith(t, repo)
 	rep, _ := wireFakes(f)
 
-	if err := f.RunInstall([]string{"rg"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"rg"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	rep.calls = nil
@@ -806,7 +778,7 @@ func TestConflictResolutionRoutesThroughPrompter(t *testing.T) {
 	_, ask := wireFakes(f)
 	ask.tool = tool("node", "24")
 
-	if err := f.RunInstall([]string{"rg"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"rg"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if len(ask.conflicts) != 1 || ask.conflicts[0] != "node" {
@@ -863,7 +835,7 @@ func TestInstallFutureSchemaPushIsFatal(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, pushErr: fmt.Errorf("parse origin/main:mise.toml: %w", env.ErrFutureSchema)}
 	f, _, out := newTestFlowsWith(t, repo)
 
-	err := f.RunInstall([]string{"node"}, "", PolicyAsk)
+	err := f.RunInstall([]string{"node"}, PolicyAsk)
 	if err == nil {
 		t.Fatal("RunInstall must propagate future-schema push failure")
 	}
@@ -918,7 +890,7 @@ func TestVerifyWarnsWhenListFails(t *testing.T) {
 	f, fm, out := newTestFlows(t)
 	fm.listErr = errors.New("mise ls broke")
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if !strings.Contains(out.String(), "could not verify installation") {
@@ -973,13 +945,13 @@ func TestInstallRefreshesLockBeforePush(t *testing.T) {
 	f, fm, _ := newTestFlowsWith(t, repo)
 	fm.lockResult = "# lock v1\n"
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	// lock regen must run after install and land in the same push
 	lockIdx, installIdx := -1, -1
 	for i, c := range fm.execCalls {
-		if c == "install" {
+		if strings.HasPrefix(c, "install ") {
 			installIdx = i
 		}
 		if c == "lock --global" {
@@ -1002,7 +974,7 @@ func TestInstallLockFailureWarnsAndDefers(t *testing.T) {
 	f, fm, out := newTestFlows(t)
 	fm.execFailArg = "lock"
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() must survive lock failure, got: %v", err)
 	}
 	if !strings.Contains(out.String(), "could not refresh lockfile") {
@@ -1108,7 +1080,7 @@ func TestPushRegeneratesLockAfterRemoteMerge(t *testing.T) {
 	// so the refresh must be pushed
 	fm.lockResults = []string{"# lock v1", "# lock v2"}
 
-	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"go"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	wantPushes := []string{"install: go", "mison: refresh lock"}
@@ -1127,7 +1099,7 @@ func TestPushWithoutMergeSkipsLockRepush(t *testing.T) {
 	f, fm, _ := newTestFlowsWith(t, repo)
 	fm.lockResult = "# lock v1\n"
 
-	if err := f.RunInstall([]string{"go"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"go"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() error = %v", err)
 	}
 	if len(repo.pushes) != 1 || repo.pushes[0] != "install: go" {
@@ -1166,21 +1138,28 @@ func TestRunInitNoRebindWithoutFlag(t *testing.T) {
 	}
 }
 
-func TestInstallFailureHintsRemoval(t *testing.T) {
-	f, fm, _ := newTestFlows(t)
-	fm.execErr = errors.New("mise install: no version found for tool bogus-tool")
+func TestInstallFailureDeclaresNothing(t *testing.T) {
+	f, fm, out := newTestFlows(t)
+	fm.execErr = errors.New("no version found for tool bogus-tool")
 
-	err := f.RunInstall([]string{"bogus-tool"}, "", PolicyAsk)
+	err := f.RunInstall([]string{"bogus-tool"}, PolicyAsk)
 	if err == nil {
 		t.Fatal("RunInstall must fail when mise install fails")
 	}
-	if !strings.Contains(err.Error(), "mison uninstall") {
-		t.Fatalf("error must hint removal of broken tools: %v", err)
+	if !strings.Contains(err.Error(), "nothing declared") {
+		t.Fatalf("error must state that nothing was declared: %v", err)
+	}
+	toml := readToml(t, f)
+	if strings.Contains(toml, "bogus-tool") {
+		t.Fatalf("failed tool must not be declared:\n%s", toml)
+	}
+	if !strings.Contains(out.String(), "✗ bogus-tool") {
+		t.Fatalf("failure must render as an outcome:\n%s", out.String())
 	}
 }
 
 func TestSyncApplyFailureHintsRemoval(t *testing.T) {
-	f, fm, _ := newTestFlows(t)
+	f, fm, out := newTestFlows(t)
 	if _, err := f.layout().Ensure(); err != nil {
 		t.Fatal(err)
 	}
@@ -1190,8 +1169,11 @@ func TestSyncApplyFailureHintsRemoval(t *testing.T) {
 	fm.execErr = errors.New("mise install: no version found")
 
 	err := f.RunSync(false, PolicyAsk)
-	if err == nil || !strings.Contains(err.Error(), "mison uninstall") {
-		t.Fatalf("sync failure must hint removal, got: %v", err)
+	if err != nil {
+		t.Fatalf("sync must survive per-tool apply failures, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "failed to apply") || !strings.Contains(out.String(), "mison uninstall") {
+		t.Fatalf("apply failure must warn with removal hint:\n%s", out.String())
 	}
 }
 
@@ -1225,7 +1207,7 @@ func TestPushFailureHintsRebindWhenRepoGone(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: Repository not found")}
 	f, _, out := newTestFlowsWith(t, repo)
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
 	}
 	if !strings.Contains(out.String(), "re-bind") {
@@ -1264,7 +1246,7 @@ func TestConcurrentRunGuarded(t *testing.T) {
 	}
 	defer g.Release()
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err == nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err == nil {
 		t.Fatal("RunInstall must refuse while another run holds the lock")
 	} else if !strings.Contains(err.Error(), "another mison") {
 		t.Fatalf("error must explain the lock, got: %v", err)
@@ -1278,7 +1260,7 @@ func TestPushFailureHintsReloginOnAuthError(t *testing.T) {
 	repo := &fakeRepo{isRepo: true, pushErr: errors.New("git push: could not read Username for 'https://github.com': terminal prompts disabled")}
 	f, _, out := newTestFlowsWith(t, repo)
 
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatalf("RunInstall() must stay warn-and-defer, got: %v", err)
 	}
 	if !strings.Contains(out.String(), "gh auth login") {

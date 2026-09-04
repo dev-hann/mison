@@ -602,7 +602,7 @@ func TestSmartPushRefusesToPushOntoFutureSchemaRemote(t *testing.T) {
 
 func TestSaveConfigStampsSchemaInFlows(t *testing.T) {
 	f, _, _ := newTestFlows(t)
-	if err := f.RunInstall([]string{"node"}, "", PolicyAsk); err != nil {
+	if err := f.RunInstall([]string{"node"}, PolicyAsk); err != nil {
 		t.Fatal(err)
 	}
 	toml := readToml(t, f)
