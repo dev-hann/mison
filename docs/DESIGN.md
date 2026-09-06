@@ -149,7 +149,8 @@ Principle: hide complexity (git), never hide information (changes).
 | 17 | install = apply-first | a tool is declared only after it installed locally — failures never pollute the shared declaration |
 | 18 | sync applies per tool with outcome classes | Applied / SkippedPlatform / Failed — no mid-flow aborts; lock-derived platform filter skips tools with no local build |
 | 19 | install failures exit non-zero; sync failures warn | registration denial must be visible; a pulled declaration is not this machine's to undeclare |
-| 20 | `mison update` = tools, `mison upgrade` = mison itself | gh-style split; update is confirm-gated (declaration versions stay fuzzy — only the lock advances); upgrade reruns the checksum-verified installer, refuses "dev" builds |
+| 20 | `mison update` = tools, `mison upgrade` = binaries (mison + mise) | gh-style split; update is confirm-gated; upgrade reruns the checksum-verified installer and refuses "dev" builds |
+| 21 | dual distribution: installer + homebrew tap | goreleaser pushes Formula/mison.rb to dev-hann/homebrew-tap on every tag (cross-repo PAT secret); caveat tells users to pick ONE method | gh-style split; update is confirm-gated (declaration versions stay fuzzy — only the lock advances); upgrade reruns the checksum-verified installer, refuses "dev" builds |
 
 ## 6. Sync case matrix
 

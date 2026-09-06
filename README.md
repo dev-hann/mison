@@ -36,8 +36,15 @@ it at any time.
 
 ## Install
 
-Requirements: `git`, `curl`. Everything else (mise, gh, tools) is
-bootstrapped automatically.
+**Homebrew:**
+
+```bash
+brew tap dev-hann/homebrew-tap
+brew install mison
+```
+
+**Or the standalone installer** — Requirements: `git`, `curl`.
+Everything else (mise, gh, tools) is bootstrapped automatically.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh

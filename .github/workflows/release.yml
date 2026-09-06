@@ -40,3 +40,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # cross-repo push to dev-hann/homebrew-tap needs a PAT with
+          # repo scope; the workflow GITHUB_TOKEN is mison-repo-local
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
