@@ -9,7 +9,7 @@ import (
 func newUpgradeCmd(f *usecase.Flows, version string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "upgrade",
-		Short: "Upgrade the mison binary to the latest release",
+		Short: "Upgrade the binaries mison depends on: mison + mise",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return f.RunUpgrade(version)
 		},

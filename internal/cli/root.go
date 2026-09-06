@@ -28,10 +28,12 @@ source of truth for your tool declarations (mise.toml).
 
 Core workflow:
   mison init              set up this machine (mise, gh auth, env repo)
-  mison install <tools>   add tools to the environment and install them
+  mison install <tools>   install tools; success earns a declaration entry
   mison uninstall <tools> remove tools from the environment
+  mison update [tools]    re-resolve fuzzy versions and install updates
   mison sync              pull latest declaration and apply it
-  mison status            compare declaration with installed tools`,
+  mison status            full health view (versions, sync, tools, doctor)
+  mison upgrade           upgrade the binaries: mison + mise`,
 		Version:       version,
 		SilenceUsage:  true, // runtime errors are self-describing; help stays on -h
 		SilenceErrors: true, // main is the single error printer

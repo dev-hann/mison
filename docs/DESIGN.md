@@ -33,16 +33,23 @@ OS-specific tools use mise's native `os` field, not machine-specific files.
                           ~/.config/mise/config.toml → clone
 ```
 
-### mison install \<tools...\> [--mac | --linux[/x64|/arm64]]
+### mison install <tools...>
 
 ```
-1. update mise.toml [tools] (add os field if flag given)
-2. mise install (apply locally)
-3. commit "install: node, python"
-4. push — on rejection: fetch → rebase → (semantic merge) → re-push
+1. mise install name@version per tool (one-off — mise never writes config)
+2. only tools that installed locally are declared in mise.toml
+3. regenerate mise.lock
+4. commit "install: node, python" → push (fetch → semantic merge on rejection)
 ```
 
-Offline: local apply + commit succeed; push deferred to next sync (warn).
+Apply-first (decision #17): a tool that fails to install — wrong name,
+no version, offline, no local build — never enters the declaration.
+Failures render as outcome classes (Applied/SkippedPlatform/Failed),
+never half-declared state. Platform scoping comes from the lockfile's
+per-tool platform keys (decision #10): a machine never attempts a
+tool with no build for it. --mac/--linux flags do not exist.
+
+Offline: the install attempt fails, so nothing is declared; retry online.
 
 ### mison uninstall \<tools...\> [--yes]
 
@@ -62,9 +69,37 @@ Same pipeline, removal. Multi-tool confirmation prompt once (skip with --yes).
 
 Sync is idempotent and doubles as a repair command (missing tools reinstall).
 
+### mison update <tools...>
+
+```
+1. mise lock --global --bump --dry-run --json → candidates
+   (fuzzy selectors only; exact pins untouched; mise.toml unmodified)
+2. none → up-to-date noop; --dry-run stops after listing
+3. confirm → mise lock --bump → mise install → push "update: old → new"
+```
+
+The explicit re-resolution path decision #12 implied — sync never
+bumps. Only the lockfile advances and propagates to other machines.
+
+### mison upgrade
+
+```
+1. refuse "dev" builds
+2. GitHub API latest tag (plain HTTP, gh-independent)
+3. newer → official install.sh (checksum-verified, keeps mison.old)
+4. mise self-update (brew-managed mise → brew upgrade hint)
+```
+
+upgrade owns the BINARIES mison depends on; update owns declared
+tools (decision #20).
+
 ### mison status
 
-Read-only diff of ② vs ③: ✓ installed / ✗ missing / ⚠ version mismatch.
+Read-only: stack header (mison·mise versions, floor guard), sync
+state vs GitHub, per-tool ✓ installed / ✗ missing / ⚠ mismatch /
+⊘ not-for-this-platform (lock-derived), path-backed warnings, and
+mise doctor problems (noise-filtered — activation advice is always
+false in mison's exec context).
 
 ## 3. Push conflict resolution
 
@@ -128,6 +163,12 @@ Principle: hide complexity (git), never hide information (changes).
 | Manual edits | uncommitted mise.toml changes | auto-commit, then diverged path |
 | Partial install | last sync failed mid-way | always re-diff ③, reinstall missing |
 
+## 7. V1 scope (fixed)
+
+In: macOS/Linux, arm64/x86_64, the 7 commands (init/install/uninstall/
+sync/status/update/upgrade), mise provider only.
+Out: Windows, scan/adopt (scope recorded, deferred), provider
+abstraction, secrets, dotfiles.
 ## 8. mise.lock adoption (design approved → implemented)
 
 Implemented: `paths.Ensure` symlinks `~/.config/mise/mise.lock` →
@@ -169,7 +210,3 @@ Live-researched against mise 2026.8 (`mise lock --global` on a real env):
 - Schema: mise.lock is mise's own `@generated` format; mison's schema
   guard does not apply to it (mise owns its compatibility).
 
-## 7. V1 scope (fixed)
-
-In: macOS/Linux, arm64/x86_64, the 5 commands, mise provider only.
-Out: Windows, scan/adopt, provider abstraction, secrets, dotfiles.

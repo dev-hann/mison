@@ -47,6 +47,10 @@ internal/usecase/
 ├── ports.go       Reporter (notify) + Prompter (confirm) + ConflictPolicy
 ├── sync.go        PlanSync (pure), Engine (SmartPush/SmartPull/SyncStatus),
 │                  ownership filter, conflict-side rules
+├── apply.go       ApplyResult outcomes (Applied/SkippedPlatform/Failed),
+│                  platformScope (lock-derived), attempt helpers, rendering
+├── update.go      Flows: Update (lock --bump re-resolution) + Upgrade
+│                  (mison + mise binaries)
 └── commands.go    Flows: Install/Uninstall/Sync/Status/Init + error
                    classification (fatal vs warn-and-defer)
 ```
@@ -58,7 +62,7 @@ internal/cli/
 ├── root.go        Execute wiring + flag helpers only
 ├── interact.go    TermUI (implements Reporter + Prompter on a terminal)
 └── <command>.go   cobra shim per command (init, install, uninstall,
-                   sync, status) — parse flags, call flows
+                   sync, status, update, upgrade) — parse flags, call flows
 ```
 
 ## Layer access rules
@@ -103,7 +107,7 @@ process stdio through (child-process UI, not ours) — via Runner.RunTTY.
 | Declaration | `mise.toml` used directly (100% mise-compatible) |
 | mise install | official installer (mise.run), never brew/apt |
 | Auth | mise installs gh → device flow → `gh auth setup-git` |
-| Commands | init, install, uninstall, sync, status (5 only) |
+| Commands | init, install, uninstall, sync, status, update, upgrade (7) |
 | install/uninstall | declare + apply + auto commit&push (fetch+rebase on reject) |
 | sync | pull → apply (os-filtered) → push pending → orphan prompt |
 | OS scoping | default all machines; `--mac`/`--linux[/x64|/arm64]` → mise `os` field |

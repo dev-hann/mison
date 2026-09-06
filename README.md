@@ -71,13 +71,13 @@ less install.sh && sh install.sh
 ## Usage
 
 ```bash
-mison init                    # bootstrap: mise → shell wiring → gh → env repo
+mison init [--account <login>] # bootstrap: mise → gh → env repo (pins the account)
 mison install node@22 rg      # install first; success earns a declaration + push
 mison uninstall node --yes    # remove everywhere + auto push
 mison sync                    # pull latest declaration and apply it
-mison status                  # compare declaration vs installed (✓ ✗ ⚠)
+mison status                  # full health view: versions, sync state, tools, mise doctor
 mison update [--dry-run]      # re-resolve fuzzy versions (latest, "22") + install
-mison upgrade                 # upgrade the mison binary itself
+mison upgrade                 # upgrade binaries: mison + mise
 ```
 
 Platform scoping is automatic: mison reads each tool's supported
