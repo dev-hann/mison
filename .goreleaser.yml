@@ -39,7 +39,6 @@ brews:
     caveats: |
       The installer (curl https://raw.githubusercontent.com/dev-hann/mison/main/scripts/install.sh | sh)
       keeps the binary in ~/.local/bin. Pick ONE install method and stick to it.
-    commit_message_template: "Brew formula update for {{ .Tag }}"
 
 checksum:
   name_template: "checksums.txt"
