@@ -194,7 +194,13 @@ func TestInstallerWiresShellPath(t *testing.T) {
 	script := filepath.Join(wd, "..", "..", "scripts", "install.sh")
 	home := t.TempDir()
 	rc := filepath.Join(home, ".zshrc")
-	env := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "SHELL=/bin/zsh", "CI="}
+	// pin a known release: skips the unauthenticated /releases/latest
+	// lookup, whose API rate limit is flaky on shared CI runners
+	// (downloads and checksums hit github.com directly, unthrottled)
+	env := []string{
+		"HOME=" + home, "PATH=" + os.Getenv("PATH"),
+		"SHELL=/bin/zsh", "CI=", "MISON_VERSION=v0.5.4",
+	}
 
 	run := func(extra ...string) {
 		args := append([]string{script}, extra...)
